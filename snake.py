@@ -10,81 +10,7 @@ HEIGHT = 10
 SCALE = 50
 
 
-# Create the snake
-class Snake:
-    def __init__(self, x, y, nn):
-        self.x = x
-        self.y = y
-        self.nn = nn
-        self.fitness = 0
-        self.direction = 0
-        self.history = []
-        self.dead = False
-        self.food_eaten = 0
-        self.score = 0
-        self.moves = 0
 
-    def think(self, food):
-        inputs = np.array([self.x, self.y, food.x, food.y])
-        output = self.nn.feed_forward(inputs)
-        self.direction = np.argmax(output)
-
-    def update(self, food):
-        self.moves += 1
-        self.history.append((self.x, self.y))
-
-        if self.direction == 0:
-            self.x += 1
-        elif self.direction == 1:
-            self.y += 1
-        elif self.direction == 2:
-            self.x -= 1
-        elif self.direction == 3:
-            self.y -= 1
-
-        if self.x > WIDTH - 1:
-            self.x = 0
-        elif self.x < 0:
-            self.x = WIDTH - 1
-
-        if self.y > HEIGHT - 1:
-            self.y = 0
-        elif self.y < 0:
-            self.y = HEIGHT - 1
-
-        if self.x == food.x and self.y == food.y:
-            self.food_eaten += 1
-            self.score += 1
-            return True
-        else:
-            self.history.pop(0)
-            return False
-
-    def calculate_fitness(self):
-        self.fitness = self.score * self.score * 100 + self.food_eaten * 1000 - self.moves
-
-    def is_dead(self):
-        if (self.x, self.y) in self.history[:-1]:
-            return True
-        else:
-            return False
-
-    def copy(self):
-        snake = Snake(self.x, self.y, self.nn.copy())
-        snake.fitness = self.fitness
-        snake.direction = self.direction
-        snake.history = self.history.copy()
-        snake.dead = self.dead
-        snake.food_eaten = self.food_eaten
-        snake.score = self.score
-        snake.moves = self.moves
-        return snake
-
-    def __str__(self):
-        return f"Score: {self.score}, Fitness: {self.fitness}"
-    
-    def __repr__(self):
-        return self.__str__()
 
 class NeuralNetwork:
     def __init__(self, input_nodes, hidden_nodes, output_nodes):
@@ -250,7 +176,7 @@ class Population:
 
     def select_parent(self):
         index = 0
-        r = random.uniform(0, self.get_fittest_fitness())
+        r = random.uniform(0, self.best.fitness)
         
 
         while r > 0:
@@ -285,7 +211,20 @@ class Snake:
     def think(self, food):
         inputs = np.array([self.x, self.y, food.x, food.y])
         output = self.nn.feedforward(inputs)
-        self.direction = np.argmax(output)
+        # Handle neural net output
+        new_direction = np.argmax(output)
+        # Ensure the snake doesn't turn in on itself
+        # Probably a better implementation with binary operators but whateva
+        if self.direction == 0 and new_direction == 2:
+            return
+        elif self.direction == 2 and new_direction == 0:
+            return
+        elif self.direction == 1 and new_direction == 3:
+            return
+        elif self.direction == 3 and new_direction == 1:
+            return
+        # Make the neural net direction the snake's direction
+        self.direction = new_direction
 
     def update(self, food):
         if self.movesnofood > 100:
@@ -440,5 +379,3 @@ if __name__ == "__main__":
             clock.tick(60)
     except KeyboardInterrupt:
         pygame.quit()
-
-    
