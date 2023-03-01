@@ -1,7 +1,8 @@
 import numpy as np
 import pygame, os, json, sys, time
 from .constants import *
-from .population import Population
+from .population_sl import SLPopulation
+from .population_dl import DLPopulation
 from .snake_obj import Snake
 from .food_obj import Food
 from .snake import screen
@@ -18,39 +19,45 @@ clock = pygame.time.Clock()
 write_interval = 1
 write_location = ""
 write_mode = False
+
+def bad_args_msg():
+    print("Invalid read/write arguments, exiting...")
+    time.sleep(2)
+    exit()
+
 try:
     if sys.argv[1] == "write":
         write_mode = True
-        write_location = sys.argv[2]
-        write_interval = int(sys.argv[3])
+        nn_mode = sys.argv[2]
+        write_location = sys.argv[3]
+        write_interval = int(sys.argv[4])
     elif sys.argv[1] == "read":
-        write_location = sys.argv[2]
+        nn_mode = sys.argv[2]
+        write_location = sys.argv[3]
+    else:
+        bad_args_msg()
+    if sys.argv[2] == "sl":
+        nn_mode = "sl"
+    elif sys.argv[2] == "dl":
+        nn_mode = "dl"
+    else:
+        bad_args_msg()
 except IndexError:
-    print("No arguments given, running in normal mode")
+    bad_args_msg()
 
 os.system("cls")
 print(f"Write mode: {write_mode}\nWrite interval: every {write_interval} generations\nReading/Write at: ./{write_location}")
 time.sleep(2)
 # Create the population
-population = Population(100, 12, 16, 4, 0.5)
+if nn_mode == "sl":
+    population = SLPopulation(100, 12, 16, 4, 0.5)
+elif nn_mode == "dl":
+    population = DLPopulation(100, 12, 16, 16, 4, 0.5)
+else:
+    bad_args_msg()
 # Load game state and preserve progress
 
-if os.path.exists(write_location):
-    print("Save file found, loading population")
-    with open(write_location, "r") as f:
-        data = json.load(f)
-
-        population.generation = data["generation"]
-        for i, v in enumerate(data["population"]):
-            population.population[i].nn.input_nodes = v['input_nodes']
-            population.population[i].nn.hidden_nodes = v['hidden_nodes']
-            population.population[i].nn.output_nodes = v['output_nodes']
-            population.population[i].nn.weights_ih = np.array(v['weights_ih'])
-            population.population[i].nn.weights_ho = np.array(v['weights_ho'])
-            population.population[i].nn.bias_h = np.array(v['bias_h'])
-            population.population[i].nn.bias_o = np.array(v['bias_o'])
-else:
-    print("No save file found, creating new population")
+population.load_from_json(write_location)
 initial_generation = population.generation
 time.sleep(2)
 # Create the snakes
@@ -68,10 +75,7 @@ while True:
                 run = False
 
         if population.generation % write_interval == 0 and population.generation > 0 and write_mode:
-            # Save population.population to json
-            with open(write_location, "w") as f:
-                json.dump(population.__dict__(), f)
-
+            population.save_to_json(write_location)
         
 
         # Check if all the snakes are dead
