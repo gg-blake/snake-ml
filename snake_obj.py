@@ -24,11 +24,10 @@ class Snake(GameObject):
         self.moves = 1 # Tracks the number of steps made since birth
         self.hungry_moves = 1 # Tracks number of steps made since last meal
         self.dead = False # Tracks if snake is dead or alive
-        self.min_distance = 1000000000000 # Tracks the closest euclidean distance between the snake and the target food
         self.death_dist = 0 # Tracks the euclidean distance between the snake and target food upon death
-        self.id = Snake._count # Unique Snake object identifier
         self.distances = [500] # Tracks the euclidean distance between the snake and target food at each step
         self.history = [] # Tracks the snake's position at each step
+        self.hungry_history = []
 
         # Instance Callbacks #
         self.update()
@@ -36,7 +35,7 @@ class Snake(GameObject):
 
     # String representation
     def __str__(self):
-        return f"Snake ID: {self.id} \nFitness: {self.fitness}\nMoves: {self.moves}\nFood Eaten: {self.food_eaten}\nParents: {self.nn.parents}"
+        return f"Snake ID: {self.nn.id} \nFitness: {self.fitness}\nMoves: {self.moves}\nFood Eaten: {self.food_eaten}\nParents: {self.nn.parents}"
     
     # Printable representation
     def __repr__(self):
@@ -71,14 +70,31 @@ class Snake(GameObject):
         choices = np.argsort(output, axis=0)
         options = [1, 2, 3, 4]
         for i in range(len(choices)):
+            '''touches = [GameObject(self.x + i, self.y + j) == self.target_food for i, j in [(0, 1), (0, -1), (1, 0), (-1, 0)]]
+            for j, is_touching in enumerate(touches):
+                if is_touching:
+                    options = []'''
             options[i] = choices[i]
+
+        touches_food = [GameObject(self.x + i, self.y + j) == self.target_food for i, j in [(1, 0), (0, 1), (-1, 0), (0, -1)]]
+        for i, is_touching in enumerate(touches_food):
+            if is_touching:
+                self.direction = i
+                return
+
         
-        for option in options:
+        for index, option in enumerate(options):
             if abs(self.direction - option) == 2:
                 continue
 
-            if random.random() < 0.1:
-                continue
+            # Chance for random path change diminishes as you go down the list of options
+            if random.random() < 0.05 * (1 / (index + 1)):
+                try:
+                    # Don't randomize path if next option hits body
+                    if not [(self.x + i, self.y + j) in self.body for i, j in [(1, 0), (0, 1), (-1, 0), (0, -1)]][index + 1]:
+                        continue
+                except IndexError:
+                    continue
 
             self.direction = option
             break
@@ -99,13 +115,24 @@ class Snake(GameObject):
     
     # Returns and sets the fitness score of this snake
     def calculate_fitness(self) -> int:
-        avg_dist = sum(self.distances) / len(self.distances)
         min_dist = min(self.distances)
-        self.fitness = int(400 / min_dist) + int(self.food_eaten**2 * 20)
+        self.fitness = int(400 / (min_dist + 1)) + int(self.food_eaten**2 * 20)
         return self.fitness
     
     def calculate_avg_dist(self) -> float:
         return sum(self.distances) / len(self.distances)
+    
+    def eat(self):
+        # Increment this snake's total number of moves by 1
+        self.food_eaten += 1
+        # Record number of hungry moves
+        self.hungry_history.append(self.hungry_moves)
+        # Reset this snake's number of hungry moves to 0
+        self.hungry_moves = 0
+        # Min distance becomes 0
+        self.distances.append(0)
+        # Reset history
+        self.history = []
 
     # Perform game logic from one step
     def update(self):
@@ -140,14 +167,10 @@ class Snake(GameObject):
 
         # Check for food collision
         if self == self.target_food:
-            # Increment this snake's total number of moves by 1
-            self.food_eaten += 1
-            # Reset this snake's number of hungry moves to 1
-            self.hungry_moves = 1
-        else:
-            # Update the closest this snake has been to it's target food
-            self.distances.append(self.food_distance(self.target_food))
-
+            self.eat()
+            
+        # Update the closest this snake has been to it's target food
+        self.distances.append(self.food_distance(self.target_food))
         self.history.append((self.x, self.y))
 
         # Update whether or not this snake has died
@@ -199,13 +222,19 @@ class Snake(GameObject):
                 # Points in the body get darker the closer they are to the end
                 tail_weight = int(count / len(self.body) * 32 + int((self.calculate_score() + 1) / len(Snake._active_food) * 128))
                 # Draw rect to screen
-                pygame.draw.rect(screen, (tail_weight, tail_weight, tail_weight), (x * SCALE, y * SCALE, SCALE, SCALE))
+                if self.calculate_score() + 1 >= len(Snake._active_food):
+                    pygame.draw.rect(screen, (self.nn.id.r, self.nn.id.g, self.nn.id.b), (x * SCALE, y * SCALE, SCALE, SCALE))
+                else:
+                    pygame.draw.rect(screen, (20, 20, 20), (x * SCALE, y * SCALE, SCALE, SCALE))
             except ValueError:
                 pass
             
         # Draw the head of the snake
         try:
-            pygame.draw.rect(screen, (0, main_wieght, 0), (self.x * SCALE, self.y * SCALE, SCALE, SCALE))
+            if self.calculate_score() + 1 >= len(Snake._active_food):
+                pygame.draw.rect(screen, (self.nn.id.r, 255, self.nn.id.b), (self.x * SCALE, self.y * SCALE, SCALE, SCALE))
+            else:
+                pygame.draw.rect(screen, (60, 60, 60), (self.x * SCALE, self.y * SCALE, SCALE, SCALE))
         except ValueError:
             pass
 
