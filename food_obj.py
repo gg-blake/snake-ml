@@ -35,4 +35,7 @@ class Food(GameObject):
     # Draws visual representation of this Food object to the running pygame window
     def draw(self):
         # Draw rect to screen
-        pygame.draw.rect(screen, (int(self.id/Food._count*255), 0, 0), (self.x * SCALE, self.y * SCALE, SCALE, SCALE))
+        if self.id == Food._count:
+            pygame.draw.rect(screen, (255, 0, 0), (self.x * SCALE, self.y * SCALE, SCALE, SCALE))
+        else:
+            pygame.draw.rect(screen, (80, 80, 80), (self.x * SCALE, self.y * SCALE, SCALE, SCALE))
