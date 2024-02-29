@@ -4,16 +4,26 @@ from .constants import *
 from .snake import screen
 import random, pygame
 import numpy as np
+from neural_network_sl import SingleLayerNeuralNetwork
 
 
-class Snake(GameObject):
+struct Snake:
     _count = 0 # Total number of Snake instances
     _active_food = [] # Current food active in the generation
     _starting_food = 6 # THIS IS FOR DEBUGGING PURPOSES ONLY
+    var x: Int
+    var y: Int
+    var nn: SingleLayerNeuralNetwork
+    var fitness: Int
+    var direction: Int
+    var body: Tuple[]
+    var food_eaten: Int
+    
 
-    def __init__(self, nn, x=int(WIDTH/2), y=int(HEIGHT/2)):
+    fn __init__(inout self, nn: SingleLayerNeuralNetwork, x: Int=int(Int(40)/2), y: Int=int(Int(40)/2)):
         # Inherited Instance Variables from GameObject #
-        super().__init__(x, y)
+        self.x = x
+        self.y = y
 
         # Unique Instance Variables #
         self.nn = nn # Stores the snakes brain as a NeuralNetwork object
@@ -32,6 +42,15 @@ class Snake(GameObject):
         # Instance Callbacks #
         self.update()
         Snake._count += 1 # Increment the number of total snakes by 1
+
+    # Inherited from GameObject (Mojo doesn't support struct inheritance)
+    def move(self, x, y):
+        self.x = x
+        self.y = y
+
+    # Inherited from GameObject (Mojo doesn't support struct inheritance)
+    def __eq__(self, other):
+        return self.x == other.x and self.y == other.y
 
     # String representation
     def __str__(self):

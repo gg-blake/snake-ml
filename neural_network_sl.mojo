@@ -1,16 +1,15 @@
 import numpy as np
 import random
-from .utils import RGB
+from utils import RGB
 
-class SingleLayerNeuralNetwork:
-    _count = 0 # Total number of SingleLayerNeuralNetwork instances
-
-    def __init__(self, input_nodes, hidden_nodes, output_nodes, mother=RGB(-1,-1,-1), father=RGB(-1,-1,-1)):
+struct SingleLayerNeuralNetwork:
+    var _count: Int
+    def __init__(self, input_nodes, hidden_nodes, output_nodes, _count: Int, mother=RGB(-1,-1,-1), father=RGB(-1,-1,-1)):
         # Instance Variables #
         self.input_nodes = input_nodes # Number of nodes in input layer
         self.hidden_nodes = hidden_nodes # Number of nodes in hidden layer
         self.output_nodes = output_nodes # Number of nodes in output layer
-        if mother.r == -1:
+        if mother.r == Int(-1):
             self.id = RGB(random.randint(0, 255), random.randint(0, 255), random.randint(0, 255))
         else:
             self.id = random.choice([mother, father])
