@@ -18,7 +18,13 @@ struct Snake:
     var direction: Int
     var body: Tuple[]
     var food_eaten: Int
-    
+    var moves: Int
+    var hungry_moves: Int
+    var dead: Bool
+    var death_dist: Int
+    var distances: Int[]
+    var history: Tuple[]
+    var hungry_history: Tuple[]
 
     fn __init__(inout self, nn: SingleLayerNeuralNetwork, x: Int=int(Int(40)/2), y: Int=int(Int(40)/2)):
         # Inherited Instance Variables from GameObject #
