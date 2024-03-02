@@ -22,8 +22,10 @@ struct NeuralNetwork:
         self.h = random.rand[DType.float16](TensorShape(h_size, 1))
         self.o = random.rand[DType.float16](TensorShape(o_size, 1))
 
-    fn feed(self, borrowed input: Tensor[DType.float16]):
-        var inputs: Tensor[DType.float16] = input.reshape(TensorShape(self.h_size, self.i_size)).transpose()
+    fn feed(self, input: Tensor[DType.float16]) raises -> Tensor[DType.float16]:
+        var new_tensor = input
+
+        var inputs: Tensor[DType.float16] = Tensor.reshape(new_tensor, TensorShape(self.h_size, self.i_size))
 
         var hidden: Tensor[DType.float16] = self.ih * inputs
         hidden = hidden + self.h
@@ -36,21 +38,24 @@ struct NeuralNetwork:
         return output
 
     # Determines the activation of a node
-    fn sigmoid(self, t: Tensor) raises -> Tensor:
-        return Tensor.ones(t.data.size).divide(
-            t.multiply(-1.0).exponential().plus(1.0)
-        )
+    fn sigmoid(self, t: Tensor[DType.float16]) raises -> Tensor[DType.float16]:
+        '''var math = Python.import_module("math")
+        return t.__truediv__(
+            math.e**(t.__mul__(-1.0)).__add__(1.0)
+        )'''
+        return t
 
-    fn mutate(self, mutation_rate: Float16) raises -> Float64:
+    fn mutate(self, mutation_rate: Float16) raises -> Float16:
         let rand = Python.import_module("random")
         let np = Python.import_module("numpy")
-        fn mutate(value: Float64) raises:
+        '''fn v_mutate(value: Float16) raises -> Float16:
             if rand.random() < mutation_rate:
-                return value + rand.gauss(0, 0.1).to_float64
+                return value + rand.gauss(0, 0.1).to_float16
             else:
                 return value
 
-        var mutate = vectorize(mutate)
+        var mutate = vectorize(v_mutate)'''
+
+        return 1.0
         
-'''
 
