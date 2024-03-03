@@ -1,61 +1,69 @@
 from python import Python
-from collections.vector import DynamicVector
-from tensor import TensorShape, tensor
-from algorithm.functional import vectorize
+from matrix import Matrix, fast_dot_product, fast_sigmoid, fast_add
 
-struct NeuralNetwork:
-    var i_size: Int
-    var h_size: Int
-    var o_size: Int
-    var ih: Tensor[DType.float16]
-    var ho: Tensor[DType.float16]
-    var h: Tensor[DType.float16]
-    var o: Tensor[DType.float16]
+alias dtype = DType.float32
+
+struct NeuralNetwork[input_size: Int, hidden_size: Int, output_size: Int]:
+    var input_to_hidden_weights: Matrix[dtype, hidden_size, input_size]
+    var hidden_to_output_weights: Matrix[dtype, output_size, hidden_size]
+    var hidden_node_biases: Matrix[dtype, hidden_size, 1]
+    var output_node_biases: Matrix[dtype, output_size, 1]
     
-    fn __init__(inout self, i_size: Int, h_size: Int, o_size: Int) raises:
-        let np = Python.import_module("numpy")
-        self.i_size = i_size
-        self.h_size = h_size
-        self.o_size = o_size
-        self.ih = random.rand[DType.float16](TensorShape(h_size, i_size))
-        self.ho = random.rand[DType.float16](TensorShape(o_size, h_size))
-        self.h = random.rand[DType.float16](TensorShape(h_size, 1))
-        self.o = random.rand[DType.float16](TensorShape(o_size, 1))
+    fn __init__(inout self):
+        self.input_to_hidden_weights = Matrix[dtype, hidden_size, input_size].rand()
+        self.hidden_to_output_weights = Matrix[dtype, output_size, hidden_size].rand()
+        self.hidden_node_biases = Matrix[dtype, hidden_size, 1].rand()
+        self.output_node_biases = Matrix[dtype, output_size, 1].rand()
 
-    fn feed(self, input: Tensor[DType.float16]) raises -> Tensor[DType.float16]:
-        var new_tensor = input
+    fn feed(self, input_array: Matrix[dtype, input_size, 1]) -> DTypePointer[dtype]:
+        var hidden_array = Matrix[dtype, hidden_size, 1]()
 
-        var inputs: Tensor[DType.float16] = Tensor.reshape(new_tensor, TensorShape(self.h_size, self.i_size))
+        fast_dot_product[dtype](hidden_array, self.input_to_hidden_weights, input_array)
+        fast_add[dtype](hidden_array, hidden_array, self.hidden_node_biases)
+        fast_sigmoid[dtype](hidden_array, hidden_array)
 
-        var hidden: Tensor[DType.float16] = self.ih * inputs
-        hidden = hidden + self.h
-        hidden = self.sigmoid(hidden)
+        var output_array = Matrix[dtype, output_size, 1]()
 
-        var output: Tensor[DType.float16] = self.ho * hidden
-        output = output + self.o
-        output = self.sigmoid(output)
+        fast_dot_product[dtype](output_array, self.input_to_hidden_weights, hidden_array)
+        fast_add[dtype](output_array, output_array, self.hidden_node_biases)
+        fast_sigmoid[dtype](output_array, output_array)
 
-        return output
+        hidden_array.data.free()
+        output_array.data.free()
 
-    # Determines the activation of a node
-    fn sigmoid(self, t: Tensor[DType.float16]) raises -> Tensor[DType.float16]:
-        '''var math = Python.import_module("math")
-        return t.__truediv__(
-            math.e**(t.__mul__(-1.0)).__add__(1.0)
-        )'''
-        return t
+        return output_array.data
 
-    fn mutate(self, mutation_rate: Float16) raises -> Float16:
-        let rand = Python.import_module("random")
-        let np = Python.import_module("numpy")
-        '''fn v_mutate(value: Float16) raises -> Float16:
-            if rand.random() < mutation_rate:
-                return value + rand.gauss(0, 0.1).to_float16
-            else:
-                return value
 
-        var mutate = vectorize(v_mutate)'''
+fn main():
+    var nn = NeuralNetwork[8, 12, 4]()
 
-        return 1.0
+    var input = Matrix[dtype, 8, 1].rand()
+    var output = Matrix[dtype, 4, 1]()
+
+    output.data = nn.feed(input)
+
+    var C = Matrix[DType.float32, 2, 2]()
+    var A = Matrix[DType.float32, 2, 3].rand()
+    var B = Matrix[DType.float32, 3, 2].rand()
+
+    print("fast_dot...")
+    A.print_repr()
+    B.print_repr()
+    fast_dot_product(C, A, B)
+    
+
+
+
+
+    
+
+    
+    output.print_repr()
+
+
+
+
+
         
 
+    
