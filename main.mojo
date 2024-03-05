@@ -1,7 +1,17 @@
 from python import Python
-from population import Population, Snake
+from population import Population
 
 fn main() raises:
-    let py = Python.import_module("builtins")
-    let snake_count: String = py.input("Enter the number of snakes per generation:")
+    print("Initializing population...")
+    var population = Population[100]()
+    print("Population completed successfully.\nStarting simulation...")
+    var timeout = 100
+    while population.update_habitat() and timeout > 0:
+        print("Simulating population...")
+        timeout -= 1
+
+    print("Simulation complete.\nGenerating next habitat...")
+    population.generate_next_habitat(survival_rate=0.5)
+    print("New habitat generated!")
+
     

@@ -1,12 +1,13 @@
 from algorithm import vectorize, parallelize
 from algorithm import Static2DTileUnitFunc as Tile2DFunc
 from python import Python
+from population import dtype
 
+alias nelts = simdwidthof[dtype]() * 2
 
-
-struct Matrix[dtype: DType, rows: Int, cols: Int]:
+@value
+struct Matrix[rows: Int, cols: Int](Hashable):
     var data: DTypePointer[dtype]
-    alias nelts = simdwidthof[dtype]() * 2
 
     fn __init__(inout self):
         self.data = DTypePointer[dtype].alloc(rows * cols)
@@ -15,11 +16,35 @@ struct Matrix[dtype: DType, rows: Int, cols: Int]:
     fn __init__(inout self, data: DTypePointer[dtype]):
         self.data = data
 
+    fn __copyinit__(inout self, existing: Self):
+        self = Matrix[existing.rows, existing.cols](existing.data)
+
+    fn __hash__(self) -> Int:
+        return self.data.__int__()
+
     fn print_repr(self):
         for i in range(self.rows):
             for j in range(self.cols):
                 var item = self.__getitem__(i, j)
                 print(item)
+
+    @staticmethod
+    fn encode(array: VariadicList[Int]) -> Matrix[rows, cols]:
+        var m = Matrix[rows, cols]()
+        for index in range(len(array)):
+            m.__setitem__(1, index, array[index])
+
+        return m
+
+    fn decode(self) -> DynamicVector[Int]:
+        if rows > 1:
+            return DynamicVector[Int]()
+
+        var m = DynamicVector[Int]()
+        for index in range(cols):
+            m.__setitem__(index, self.__getitem__(0, index).to_int())
+
+        return m
 
 
     @staticmethod
@@ -48,8 +73,7 @@ fn tile[tiled_fn: Tile2DFunc, tile_x: Int, tile_y: Int](end_x: Int, end_y: Int):
             tiled_fn[tile_x, tile_y](x, y)
 
 # Unroll the vectorized loop by a constant factor.
-fn fast_dot_product[dtype: DType](C: Matrix[dtype], A: Matrix[dtype], B: Matrix[dtype]):
-    alias nelts = simdwidthof[dtype]() * 2
+fn fast_dot_product(C: Matrix, A: Matrix, B: Matrix):
     
     @parameter
     fn calc_row(m: Int):
@@ -59,7 +83,6 @@ fn fast_dot_product[dtype: DType](C: Matrix[dtype], A: Matrix[dtype], B: Matrix[
                 @parameter
                 fn dot[nelts: Int](n: Int):
                     C.store(m, n + x, C.load[nelts](m, n + x) + A[m, k] * B.load[nelts](k, n + x))
-
                 # Vectorize by nelts and unroll by tile_x/nelts
                 # Here unroll factor is 4
                 alias unroll_factor = tile_x // nelts
@@ -70,8 +93,7 @@ fn fast_dot_product[dtype: DType](C: Matrix[dtype], A: Matrix[dtype], B: Matrix[
 
     parallelize[calc_row](C.rows, C.rows)
    
-fn fast_add[dtype: DType](C: Matrix[dtype], A: Matrix[dtype], B: Matrix[dtype]):
-    alias nelts = simdwidthof[dtype]() * 2
+fn fast_add(C: Matrix, A: Matrix, B: Matrix):
 
     @parameter
     fn calc_add(m: Int):
@@ -80,8 +102,7 @@ fn fast_add[dtype: DType](C: Matrix[dtype], A: Matrix[dtype], B: Matrix[dtype]):
 
     parallelize[calc_add](C.rows, C.rows)
 
-fn fast_sigmoid[dtype: DType](C: Matrix[dtype], A: Matrix[dtype]):
-    alias nelts = simdwidthof[dtype]() * 2
+fn fast_sigmoid(C: Matrix, A: Matrix):
 
     @parameter
     fn calc_sigmoid(m: Int):
@@ -89,10 +110,9 @@ fn fast_sigmoid[dtype: DType](C: Matrix[dtype], A: Matrix[dtype]):
 
     parallelize[calc_sigmoid](C.rows, C.rows)
 
-fn mutate[dtype: DType](B: Matrix[dtype], A: Matrix[dtype], mutation_rate: Float64):
-    alias nelts = simdwidthof[dtype]() * 2
+fn mutate[dtype: DType](B: Matrix, A: Matrix, mutation_rate: Float64):
 
-    random.randn[dtype](B.data, 0, 0.1)
+    random.randn(B.data, 0, 0.1)
 
     @parameter
     fn mutate_row(m: Int):
@@ -108,7 +128,7 @@ fn mutate[dtype: DType](B: Matrix[dtype], A: Matrix[dtype], mutation_rate: Float
 
     parallelize[mutate_row](A.rows, A.rows)
 
-fn fast_transpose[dtype: DType](B: Matrix[dtype], A: Matrix[dtype]):
+fn fast_transpose[dtype: DType](B: Matrix, A: Matrix):
     alias nelts = simdwidthof[dtype]() * 2
 
     @parameter
@@ -118,5 +138,21 @@ fn fast_transpose[dtype: DType](B: Matrix[dtype], A: Matrix[dtype]):
 
     parallelize[transpose](A.rows, A.rows)
 
-                    
+fn identity_matrix(B: Matrix, A: Matrix, scale: Float32):
+    for i in range(A.rows):
+        for j in range(A.cols):
+            if i == j:
+                B.store[nelts](i, j, scale)
+
+fn scale(B: Matrix, A: Matrix, scale: Float32):
+    var C = Matrix[A.cols, A.cols]()
+    identity_matrix(C, A, scale)
+    fast_dot_product(B, A, C)
+    C.data.free()
+
+fn average(C: Matrix, A: Matrix, B: Matrix):
+    var D = Matrix[A.rows, A.cols]()
+    fast_add(D, A, B)
+    scale(C, D, 0.5)
+    D.data.free()
                 
