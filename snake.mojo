@@ -1,9 +1,38 @@
+from python import Python
 from algorithm.sort import sort
-from matrix import Matrix
-from population import dtype, nn_dtype, game_width, game_width_offset, game_height, game_height_offset
+from population import dtype, nn_dtype, game_width, game_width_offset, game_height, game_height_offset, starting_score, Population
+from tensor import Tensor, TensorShape
+from collections import Set
+
+@value
+struct KeyPosition(KeyElement):
+    var x: Int
+    var y: Int
+
+    fn __init__(inout self, x: Int, y: Int):
+        self.x = x
+        self.y = y
+
+    fn __hash__(self) -> Int:
+        try:
+            var hashlib = Python.import_module("hashlib")
+            var md5_hash = hashlib.md5()
+            md5_hash.update((self.x, self.y))
+            return md5_hash.hexdigest().to_float64().to_int()
+        except:
+            var hashlib = Python.none()
+            return 0
+
+    fn __eq__(self, other: Self) -> Bool:
+        return self.x == other.x and self.y == other.y
+
+        
+        
+
 
 @value
 struct Snake(CollectionElement, Hashable):
+    var id: Int
     var x_position: Int
     var y_position: Int
     var score: Int
@@ -11,29 +40,40 @@ struct Snake(CollectionElement, Hashable):
     var active: Bool
     var min_dist: Float32
     var neural_network: nn_dtype
+    var body: PythonObject
+    var body_set: Set[KeyPosition]
 
-    fn __init__(inout self):
+    fn __init__(inout self, id: Int):
+        try:
+            var collections = Python.import_module("collections")
+            self.body = collections.deque()
+        except:
+            var collections = Python.none()
+            self.body = Python.none()
+        self.id = id
         self.x_position = 0
         self.y_position = 0
-        self.score = 0
+        self.score = 5
         self.history = DynamicVector[(Int, Int)]()
         self.history.resize(1, (self.x_position, self.y_position))
         self.active = True
         self.min_dist = game_width * game_height
-        self.neural_network = nn_dtype()
+        self.neural_network = nn_dtype(id)
+        
+        self.body_set = Set[KeyPosition]()
 
-    fn __init__(inout self, nn_data: nn_dtype):
-        self.__init__()
+    fn __init__(inout self, nn_data: nn_dtype, id: Int):
+        self.__init__(id)
         self.neural_network = nn_data
 
     fn __copyinit__(inout self, existing: Self):
-        self = Snake(existing.neural_network)
+        self = Snake(existing.neural_network, existing.id)
 
     fn __moveinit__(inout self, owned existing: Self):
-        self = Snake(existing.neural_network)
+        self = Snake(existing.neural_network, existing.id)
 
     fn __hash__(self) -> Int:
-        return hash(self.neural_network)
+        return self.id
 
     fn __eq__(self, other: Snake) -> Bool:
         return hash(self) == hash(other)
@@ -80,9 +120,24 @@ struct Snake(CollectionElement, Hashable):
         
         return 0
 
-    fn move(inout self, x: Int, y: Int):
+    fn move(inout self, x: Int, y: Int) raises:
         self.x_position = x
         self.y_position = y
+
+        var key = KeyPosition(self.x_position, self.y_position)
+        var tuple = (self.x_position, self.y_position)
+
+        if key in self.body_set:
+            self.active = False
+            return
+        
+        self.body.appendleft(tuple)
+        self.body_set.add(key)
+
+        if len(self.body) > self.score:
+            var tail_tuple = self.body.pop()
+            var tail_key = KeyPosition(tail_tuple[0].to_float64().to_int(), tail_tuple[1].to_float64().to_int())
+            self.body_set.remove(tail_key)
 
     fn update(inout self, x_position_fruit: Int, y_position_fruit: Int):
         if self.inBody() or not self.inBounds():
@@ -91,30 +146,32 @@ struct Snake(CollectionElement, Hashable):
             self.score += 1
             self.min_dist = game_width * game_height
 
-    fn think(inout self, x_position_fruit: Int, y_position_fruit: Int):
+    fn think(inout self, x_position_fruit: Int, y_position_fruit: Int) raises:
+        var torch = Python.import_module("torch")
+        if torch.cuda.is_available():
+            var device = torch.device("cuda")
+        else:
+            var device = torch.device("cpu")
         if not self.active:
             return
 
-        var input_array = VariadicList(self.x_position, 
-                           self.y_position, 
-                           x_position_fruit, 
-                           y_position_fruit, 
-                           Snake.inBounds(self.x_position - 1, self.y_position), 
-                           Snake.inBounds(self.x_position + 1, self.y_position), 
-                           Snake.inBounds(self.x_position, self.y_position - 1), 
-                           Snake.inBounds(self.x_position, self.y_position + 1),
-                           Snake.inBody(self.history, self.x_position - 1, self.y_position), 
-                           Snake.inBody(self.history, self.x_position + 1, self.y_position), 
-                           Snake.inBody(self.history, self.x_position, self.y_position - 1), 
-                           Snake.inBody(self.history, self.x_position, self.y_position + 1))
-        
-        var input_matrix = Matrix[12, 1].encode(input_array) 
-        var output_matrix: Matrix[4, 1] = self.neural_network.feed(input_matrix)
-        var output_array = output_matrix.decode()
-        sort(output_array)
+        var input_tensor = torch.tensor([self.x_position, self.y_position, x_position_fruit, y_position_fruit, 
+                                        Snake.inBounds(self.x_position - 1, self.y_position), 
+                                        Snake.inBounds(self.x_position + 1, self.y_position), 
+                                        Snake.inBounds(self.x_position, self.y_position - 1), 
+                                        Snake.inBounds(self.x_position, self.y_position + 1),
+                                        Snake.inBody(self.history, self.x_position - 1, self.y_position), 
+                                        Snake.inBody(self.history, self.x_position + 1, self.y_position), 
+                                        Snake.inBody(self.history, self.x_position, self.y_position - 1), 
+                                        Snake.inBody(self.history, self.x_position, self.y_position + 1)]).to(torch.float32).unsqueeze(1)
+
+        var output_array = DynamicVector[Float32]()
+        var output_tensor = self.neural_network.feed(input_tensor)
+        torch.flatten(output_tensor)
+        torch.sort(output_tensor)
         var previous_position = self.history[-2]
 
-        for ptr in output_array:
+        for ptr in output_tensor:
             var choice = ptr.get_unsafe_pointer()[0]
             # Up
             if choice == 0 and previous_position.get[1, Int]() != self.y_position + 1:
@@ -131,10 +188,10 @@ struct Snake(CollectionElement, Hashable):
 
         self.update(x_position_fruit, y_position_fruit)
 
-    
-
         
-
+fn main() raises:
+    var population = Population[100]()
+    population.update_habitat()
 
 
     

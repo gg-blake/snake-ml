@@ -10,19 +10,22 @@ alias game_width: Int = 20
 alias game_width_offset: Int = game_width // 2
 alias game_height: Int = 20
 alias game_height_offset: Int = game_height // 2
+alias starting_score: Int = 5
 
 struct Population[snake_count: Int]:
     var habitat: DynamicVector[Snake]
     var food_array: DynamicVector[(Int, Int)]
     var active: Bool
+    var generation: Int
 
     fn __init__(inout self) raises:
         self.habitat = DynamicVector[Snake]()
         self.food_array = DynamicVector[(Int, Int)]()
         self.active = True
+        self.generation = 0
         self.generate_food()
-        for i in range(snake_count):
-            var snake_object = Snake()
+        for id in range(snake_count):
+            var snake_object = Snake(id)
             self.habitat.append(snake_object)
 
     fn generate_food(inout self) raises:
@@ -32,14 +35,14 @@ struct Population[snake_count: Int]:
         self.food_array.append((rand_x, rand_y))
 
     fn update_habitat(inout self) raises -> Bool:
+        print("Updating...")
         var survived = False
 
         for snake_reference in self.habitat:
             var snake = snake_reference[]
             if snake.score >= len(self.food_array):
                 self.generate_food()
-            
-            var current_snake_fruit = self.food_array[snake.score]
+            var current_snake_fruit = self.food_array[snake.score - starting_score]
             var current_x_position_fruit = current_snake_fruit.get[0, Int]()
             var current_y_position_fruit = current_snake_fruit.get[1, Int]()
             snake.think(current_x_position_fruit, current_y_position_fruit)
@@ -85,13 +88,19 @@ struct Population[snake_count: Int]:
         print("Saved Fitness Scores")
         index = 0
 
-        for i in range(snake_count * survival_rate, snake_count, 2):
-            var habitat_index = fitness_dict[fitness_array[i]]
-            var fit_traits_a: nn_dtype = self.habitat[fitness_dict[fitness_array[i - (snake_count // 2)]]].neural_network
-            var fit_traits_b: nn_dtype = self.habitat[fitness_dict[fitness_array[i - (snake_count // 2) + 1]]].neural_network
-            var new_traits: nn_dtype = NeuralNetwork.blend_genetic_traits(fit_traits_a, fit_traits_b)
-            var child: Snake = Snake(new_traits)
+        # Resurrect the fittest snakes, their objects are preserved in the habitat
+        for index in range(snake_count):
+            var habitat_index = fitness_dict[fitness_array[index]]
+            self.habitat[habitat_index].active = True
+
+        # For every two fit snakes, create two children with blended weights and biases and replace two unfit snake objects in the habitat
+        for index in range(snake_count * survival_rate, snake_count, 2):
+            var habitat_index = fitness_dict[fitness_array[index]]
+            var fit_traits_a: nn_dtype = self.habitat[fitness_dict[fitness_array[index - (snake_count // 2)]]].neural_network
+            var fit_traits_b: nn_dtype = self.habitat[fitness_dict[fitness_array[index - (snake_count // 2) + 1]]].neural_network
+            var new_traits: nn_dtype = NeuralNetwork.blend_genetic_traits(fit_traits_a, fit_traits_b, self.generation * snake_count + index)
+            var child: Snake = Snake(new_traits, self.generation * snake_count + index)
             self.habitat[habitat_index] = child
             self.habitat[habitat_index + 1] = child
-
+            self.habitat[habitat_index + 1].id += 1
     
