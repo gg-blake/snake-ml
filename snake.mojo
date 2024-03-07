@@ -106,7 +106,7 @@ struct Snake(CollectionElement, Hashable):
             self.active = False
             return
         
-        self.body.appendleft(tuple)
+        _ = self.body.appendleft(tuple)
         self.body_set.add(key)
 
         if len(self.body) > self.score:
@@ -142,8 +142,8 @@ struct Snake(CollectionElement, Hashable):
 
         var output_array = DynamicVector[Float32]()
         var output_tensor = self.neural_network.feed(input_tensor)
-        torch.flatten(output_tensor)
-        torch.sort(output_tensor)
+        _ = torch.flatten(output_tensor)
+        _ = torch.sort(output_tensor)
         var previous_position = self.history[-2]
 
         for ptr in output_tensor:
@@ -166,11 +166,6 @@ struct Snake(CollectionElement, Hashable):
                 break
 
         self.update(x_position_fruit, y_position_fruit)
-
-        
-fn main() raises:
-    var population = Population[100]()
-    population.update_habitat()
 
 
     

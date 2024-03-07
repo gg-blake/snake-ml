@@ -13,7 +13,7 @@ struct KeyPosition(KeyElement):
         try:
             var hashlib = Python.import_module("hashlib")
             var md5_hash = hashlib.md5()
-            md5_hash.update((self.x, self.y))
+            _ = md5_hash.update((self.x, self.y))
             return md5_hash.hexdigest().to_float64().to_int()
         except:
             var hashlib = Python.none()
