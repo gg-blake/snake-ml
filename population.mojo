@@ -6,19 +6,27 @@ from algorithm.sort import sort
 
 alias dtype = DType.float32
 alias nn_dtype = NeuralNetwork[12, 16, 4]
-alias game_width: Int = 20
+alias game_width: Int = 40
 alias game_width_offset: Int = game_width // 2
-alias game_height: Int = 20
+alias game_height: Int = 40
 alias game_height_offset: Int = game_height // 2
 alias starting_score: Int = 5
+alias game_scale: Int = 13
 
 struct Population[snake_count: Int]:
     var habitat: DynamicVector[Snake]
     var food_array: DynamicVector[(Int, Int)]
     var active: Bool
     var generation: Int
+    var screen: PythonObject
+    var clock: PythonObject
 
     fn __init__(inout self) raises:
+        var pygame = Python.import_module("pygame")
+        _ = pygame.init()
+        _ = pygame.display.set_caption("Snake AI")
+        self.screen = pygame.display.set_mode((game_width * game_scale, game_height * game_scale))
+        self.clock = pygame.time.Clock()
         self.habitat = DynamicVector[Snake]()
         self.food_array = DynamicVector[(Int, Int)]()
         self.active = True
@@ -35,9 +43,10 @@ struct Population[snake_count: Int]:
         self.food_array.append((rand_x, rand_y))
 
     fn update_habitat(inout self) raises -> Bool:
-        print("Updating...")
+        var pygame = Python.import_module("pygame")
         var survived = False
 
+        _ = self.screen.fill((0, 0, 0))
         for snake_reference in self.habitat:
             var snake = snake_reference[]
             if snake.score >= len(self.food_array):
@@ -58,7 +67,11 @@ struct Population[snake_count: Int]:
             if snake.active:
                 survived = True
 
-            
+            _ = snake.draw(len(self.food_array), self.screen)
+
+        self.draw_food()
+        _ = pygame.display.update()
+        _ = self.clock.tick(60)
 
         return survived
 
@@ -69,7 +82,6 @@ struct Population[snake_count: Int]:
     @staticmethod
     fn euclidean_distance(x1: Int, y1: Int, x2: Int, y2: Int) -> Float32:
         return ((x1 - x2)**2 + (y1 - y2)**2)**(0.5)
-
 
     fn generate_next_habitat(inout self, survival_rate: Float32) raises:
         # I don't know how to implement Mojo built-in sort so this is my work around :(
@@ -85,8 +97,6 @@ struct Population[snake_count: Int]:
             index += 1
 
         sort(fitness_array)
-        print("Saved Fitness Scores")
-        index = 0
 
         # Resurrect the fittest snakes, their objects are preserved in the habitat
         for index in range(snake_count):
@@ -103,4 +113,21 @@ struct Population[snake_count: Int]:
             self.habitat[habitat_index] = child
             self.habitat[habitat_index + 1] = child
             self.habitat[habitat_index + 1].id += 1
+
+    fn draw_food(self) raises:
+        var pygame = Python.import_module("pygame")
+
+        for index in range(0, len(self.food_array) - 1):
+            var food = self.food_array[index]
+            var food_x = food.get[0, Int]() + game_width_offset
+            var food_y = food.get[1, Int]() + game_height_offset
+            # Draws visual representation of this Food object to the running pygame window
+            _ = pygame.draw.rect(self.screen, (0, 200, 0), (food_x * game_scale, food_y * game_scale, game_scale, game_scale))
+
+        var last_food_x = self.food_array[-1].get[0, Int]() + game_width_offset
+        var last_food_y = self.food_array[-1].get[1, Int]() + game_height_offset
+        _ = pygame.draw.rect(self.screen, (0, 100, 0), (last_food_x * game_scale, last_food_y * game_scale, game_scale, game_scale))
+            
+
+        
     

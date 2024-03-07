@@ -1,6 +1,6 @@
 from python import Python
 from algorithm.sort import sort
-from population import dtype, nn_dtype, game_width, game_width_offset, game_height, game_height_offset, starting_score, Population
+from population import dtype, nn_dtype, game_width, game_width_offset, game_height, game_height_offset, starting_score, game_scale, Population
 from tensor import Tensor, TensorShape
 from collections import Set
 from key_position import KeyPosition
@@ -167,10 +167,36 @@ struct Snake(CollectionElement, Hashable):
 
         self.update(x_position_fruit, y_position_fruit)
 
-
-    
-
-    
-
+    # Draws visual representation of this Snake object to the running pygame window
+    def draw(self, current_food_count: Int, inout screen: PythonObject):
+        var pygame = Python.import_module("pygame")
+        # Snakes that have eaten the most food off their generation are the brightest
+        var true_score = self.score - starting_score
+        main_weight = int((true_score + 1) / current_food_count * 255)
+        
+        # Draw the body
+        count = 0
+        for key_ref in self.body_set:
+            var key = key_ref[]
+            count += 1
+            try:
+                # Points in the body get darker the closer they are to the end
+                tail_weight = int(count / len(self.body) * 32 + int((true_score + 1) / current_food_count * 128))
+                # Draw rect to screen
+                if self.score - starting_score + 1 >= current_food_count:
+                    pygame.draw.rect(screen, (200, 30, 30), ((key.x + game_width_offset) * game_scale, (key.y + game_height_offset) * game_scale, game_scale, game_scale))
+                else:
+                    pygame.draw.rect(screen, (200, 0, 0), (key.x + game_width_offset) * game_scale, (key.y + game_height_offset) * game_scale, game_scale, game_scale)
+            except ValueError:
+                pass
+            
+        # Draw the head of the snake
+        try:
+            if true_score + 1 >= current_food_count:
+                pygame.draw.rect(screen, (120, 255, 120), ((self.x_position + game_width_offset) * game_scale, (self.y_position + game_height_offset) * game_scale, game_scale, game_scale))
+            else:
+                pygame.draw.rect(screen, (60, 60, 60), ((self.x_position + game_width_offset) * game_scale, (self.y_position + game_height_offset) * game_scale, game_scale, game_scale))
+        except ValueError:
+            pass
 
     
