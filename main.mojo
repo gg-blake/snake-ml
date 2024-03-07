@@ -7,7 +7,7 @@ fn main() raises:
     print("Population completed successfully.\nStarting simulation...")
     var timeout = 100
     while population.update_habitat() and timeout > 0:
-        print("Simulating population...")
+        print("Simulating population...", "Time Until Time Out:", timeout)
         timeout -= 1
 
     print("Simulation complete.\nGenerating next habitat...")
