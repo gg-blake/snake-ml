@@ -1,5 +1,4 @@
 from python import Python
-from matrix import Matrix
 from population import dtype, Population
 from random import rand
 from tensor import TensorShape, Tensor
@@ -34,10 +33,6 @@ struct NeuralNetwork[input_size: Int, hidden_size: Int, output_size: Int](Hashab
             self.hidden_node_biases = Python.none()
             self.output_node_biases = Python.none()
             self.id = id
-        
-        
-
-        
 
     fn __init__(inout self, input_to_hidden_weights: PythonObject, hidden_to_output_weights: PythonObject, hidden_node_biases: PythonObject, output_node_biases: PythonObject, id: Int):
         self.id = id

@@ -3,32 +3,7 @@ from algorithm.sort import sort
 from population import dtype, nn_dtype, game_width, game_width_offset, game_height, game_height_offset, starting_score, Population
 from tensor import Tensor, TensorShape
 from collections import Set
-
-@value
-struct KeyPosition(KeyElement):
-    var x: Int
-    var y: Int
-
-    fn __init__(inout self, x: Int, y: Int):
-        self.x = x
-        self.y = y
-
-    fn __hash__(self) -> Int:
-        try:
-            var hashlib = Python.import_module("hashlib")
-            var md5_hash = hashlib.md5()
-            md5_hash.update((self.x, self.y))
-            return md5_hash.hexdigest().to_float64().to_int()
-        except:
-            var hashlib = Python.none()
-            return 0
-
-    fn __eq__(self, other: Self) -> Bool:
-        return self.x == other.x and self.y == other.y
-
-        
-        
-
+from key_position import KeyPosition
 
 @value
 struct Snake(CollectionElement, Hashable):
@@ -176,15 +151,19 @@ struct Snake(CollectionElement, Hashable):
             # Up
             if choice == 0 and previous_position.get[1, Int]() != self.y_position + 1:
                 self.move(self.x_position, self.y_position + 1)
+                break
             # Left
             elif choice == 1 and previous_position.get[0, Int]() != self.y_position - 1:
                 self.move(self.x_position - 1, self.y_position)
+                break
             # Down
             elif choice == 2 and previous_position.get[1, Int]() != self.y_position - 1:
                 self.move(self.x_position, self.y_position - 1)
+                break
             # Right
             elif choice == 3 and previous_position.get[0, Int]() != self.y_position + 1:
                 self.move(self.x_position + 1, self.y_position)
+                break
 
         self.update(x_position_fruit, y_position_fruit)
 
