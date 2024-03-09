@@ -53,8 +53,8 @@ struct NeuralNetwork[input_size: Int, hidden_size: Int, output_size: Int](Hashab
 
     fn feed(self, input_array: PythonObject) raises -> PythonObject:
         var torch = Python.import_module("torch")
-        var hidden_array = torch.mm(self.input_to_hidden_weights, input_array) + self.hidden_node_biases
-        var output_array = torch.mm(self.hidden_to_output_weights, hidden_array) + self.output_node_biases
+        var hidden_array = torch.special.expit(torch.mm(self.input_to_hidden_weights, input_array) + self.hidden_node_biases)
+        var output_array = torch.special.expit(torch.mm(self.hidden_to_output_weights, hidden_array) + self.output_node_biases)
         return output_array
 
     fn blend_genetic_traits(self: Self, other: Self, id: Int) raises -> Self:
