@@ -21,3 +21,9 @@ struct KeyPosition(KeyElement):
 
     fn __eq__(self, other: Self) -> Bool:
         return self.x == other.x and self.y == other.y
+
+    fn __repr__(self) -> String:
+        return self.__str__()
+
+    fn __str__(self) -> String:
+        return "(" + str(self.x) + ", " + str(self.y) + ")"
