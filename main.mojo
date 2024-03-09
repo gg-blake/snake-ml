@@ -12,8 +12,8 @@ fn main() raises:
     sleep(1)
     while True:
         Logger.cls()
-        while population.update_habitat():
-            Logger.cls()
+        while population.habitat_status():
+            population.update_habitat()
             Logger.notice("Current Generation: " + str(population.generation))
             Logger.notice("Simulating population...")
         Logger.notice("Generation has died. Generating next habitat...")

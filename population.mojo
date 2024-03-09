@@ -3,6 +3,8 @@ from snake import Snake
 from collections import Set, Dict
 from neural_network import NeuralNetwork
 from algorithm.sort import sort
+from logger import Logger
+from key_position import KeyPosition
 
 alias dtype = DType.float32
 alias nn_dtype = NeuralNetwork[12, 16, 4]
@@ -15,7 +17,7 @@ alias game_scale: Int = 13
 
 struct Population[snake_count: Int]:
     var habitat: DynamicVector[Snake]
-    var food_array: DynamicVector[(Int, Int)]
+    var food_array: DynamicVector[KeyPosition]
     var active: Bool
     var generation: Int
     var screen: PythonObject
@@ -28,44 +30,39 @@ struct Population[snake_count: Int]:
         self.screen = pygame.display.set_mode((game_width * game_scale, game_height * game_scale))
         self.clock = pygame.time.Clock()
         self.habitat = DynamicVector[Snake]()
-        self.food_array = DynamicVector[(Int, Int)]()
+        self.food_array = DynamicVector[KeyPosition]()
         self.active = True
         self.generation = 0
         self.generate_food()
         for id in range(snake_count):
-            var snake_object = Snake(id)
-            self.habitat.append(snake_object)
+            var snake_obj = Snake(id)
+            self.habitat.append(snake_obj)
 
     fn generate_food(inout self) raises:
         var pyrandom = Python.import_module("random")
         var rand_x = pyrandom.randint(-game_width_offset, game_width_offset).to_float64().to_int()
         var rand_y = pyrandom.randint(-game_height_offset, game_height_offset).to_float64().to_int()
-        self.food_array.append((rand_x, rand_y))
+        self.food_array.append(KeyPosition(rand_x, rand_y))
 
-    fn update_habitat(inout self) raises -> Bool:
+    fn update_habitat(inout self) raises:
         var pygame = Python.import_module("pygame")
-        var survived = False
 
         _ = self.screen.fill((0, 0, 0))
-        for snake_reference in self.habitat:
-            var snake = snake_reference[]
-            if snake.score >= len(self.food_array):
+        var index = 0
+        for index in range(len(self.habitat)):
+            var snake = self.habitat[index]
+            if snake.score - starting_score >= len(self.food_array):
                 self.generate_food()
             var current_snake_fruit = self.food_array[snake.score - starting_score]
-            var current_x_position_fruit = current_snake_fruit.get[0, Int]()
-            var current_y_position_fruit = current_snake_fruit.get[1, Int]()
-            snake.think(current_x_position_fruit, current_y_position_fruit)
+            snake.think(current_snake_fruit.x, current_snake_fruit.y)
 
             var distance: Float32 = Population[snake_count].euclidean_distance(snake.x_position, 
                 snake.y_position, 
-                current_x_position_fruit, 
-                current_y_position_fruit)
+                current_snake_fruit.x, 
+                current_snake_fruit.y)
 
             if distance < snake.min_dist:
                 snake.min_dist = distance
-
-            if snake.active:
-                survived = True
 
             _ = snake.draw(len(self.food_array), self.screen)
 
@@ -73,7 +70,13 @@ struct Population[snake_count: Int]:
         _ = pygame.display.update()
         _ = self.clock.tick(60)
 
-        return survived
+    fn habitat_status(self) -> Bool:
+        for snake_reference in self.habitat:
+            var snake = snake_reference[]
+            if not snake.active:
+                return False
+
+        return True
 
     @staticmethod
     fn fitness(snake: Snake) -> Float32:
@@ -119,13 +122,13 @@ struct Population[snake_count: Int]:
 
         for index in range(0, len(self.food_array) - 1):
             var food = self.food_array[index]
-            var food_x = food.get[0, Int]() + game_width_offset
-            var food_y = food.get[1, Int]() + game_height_offset
+            var food_x = food.x + game_width_offset
+            var food_y = food.y + game_height_offset
             # Draws visual representation of this Food object to the running pygame window
             _ = pygame.draw.rect(self.screen, (0, 200, 0), (food_x * game_scale, food_y * game_scale, game_scale, game_scale))
 
-        var last_food_x = self.food_array[-1].get[0, Int]() + game_width_offset
-        var last_food_y = self.food_array[-1].get[1, Int]() + game_height_offset
+        var last_food_x = self.food_array[-1].x + game_width_offset
+        var last_food_y = self.food_array[-1].y + game_height_offset
         _ = pygame.draw.rect(self.screen, (0, 100, 0), (last_food_x * game_scale, last_food_y * game_scale, game_scale, game_scale))
             
 

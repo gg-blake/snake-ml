@@ -4,6 +4,7 @@ from population import dtype, nn_dtype, game_width, game_width_offset, game_heig
 from tensor import Tensor, TensorShape
 from collections import Set
 from key_position import KeyPosition
+from logger import Logger
 
 @value
 struct Snake(CollectionElement, Hashable):
@@ -11,7 +12,6 @@ struct Snake(CollectionElement, Hashable):
     var x_position: Int
     var y_position: Int
     var score: Int
-    var history: DynamicVector[(Int, Int)]
     var active: Bool
     var min_dist: Float32
     var neural_network: nn_dtype
@@ -28,9 +28,7 @@ struct Snake(CollectionElement, Hashable):
         self.id = id
         self.x_position = 0
         self.y_position = 0
-        self.score = 5
-        self.history = DynamicVector[(Int, Int)]()
-        self.history.resize(1, (self.x_position, self.y_position))
+        self.score = starting_score
         self.active = True
         self.min_dist = game_width * game_height
         self.neural_network = nn_dtype(id)
@@ -45,10 +43,14 @@ struct Snake(CollectionElement, Hashable):
         self = Snake(existing.neural_network, existing.id)
 
     fn __moveinit__(inout self, owned existing: Self):
-        self = Snake(existing.neural_network, existing.id)
+        self = existing
+
 
     fn __hash__(self) -> Int:
         return self.id
+
+    fn clone(inout self: Self, existing: Self):
+        self = Snake(existing.neural_network, existing.id)
 
     fn __eq__(self, other: Snake) -> Bool:
         return hash(self) == hash(other)
@@ -68,11 +70,9 @@ struct Snake(CollectionElement, Hashable):
 
     fn inBody(self) -> Int:
         var count = 0
-        for i in self.history:
-            var current_pos = i.get_unsafe_pointer()[0]
-            var current_pos_x = current_pos.get[0, Int]()
-            var current_pos_y = current_pos.get[1, Int]()
-            if current_pos_x == self.x_position and current_pos_y == self.y_position:
+        for key_ref in self.body_set:
+            var key = key_ref[]
+            if key.x == self.x_position and key.y == self.y_position:
                 count += 1
 
         if count > 1:
@@ -81,13 +81,11 @@ struct Snake(CollectionElement, Hashable):
         return 0
 
     @staticmethod
-    fn inBody(history: DynamicVector[(Int, Int)], x: Int, y: Int) -> Int:
+    fn inBody(body_set: Set[KeyPosition], x: Int, y: Int) -> Int:
         var count = 0
-        for i in history:
-            var current_pos = i.get_unsafe_pointer()[0]
-            var current_pos_x = current_pos.get[0, Int]()
-            var current_pos_y = current_pos.get[1, Int]()
-            if current_pos_x == x and current_pos_y == y:
+        for key_ref in body_set:
+            var key = key_ref[]
+            if key.x == x and key.y == y:
                 count += 1
 
         if count > 1:
@@ -96,23 +94,25 @@ struct Snake(CollectionElement, Hashable):
         return 0
 
     fn move(inout self, x: Int, y: Int) raises:
-        self.x_position = x
-        self.y_position = y
+        print(self.x_position, self.y_position)
+        
 
         var key = KeyPosition(self.x_position, self.y_position)
         var tuple = (self.x_position, self.y_position)
-
-        if key in self.body_set:
-            self.active = False
-            return
         
         _ = self.body.appendleft(tuple)
         self.body_set.add(key)
 
         if len(self.body) > self.score:
+            print(self.body)
             var tail_tuple = self.body.pop()
             var tail_key = KeyPosition(tail_tuple[0].to_float64().to_int(), tail_tuple[1].to_float64().to_int())
             self.body_set.remove(tail_key)
+
+        self.x_position = x
+        self.y_position = y
+
+        
 
     fn update(inout self, x_position_fruit: Int, y_position_fruit: Int):
         if self.inBody() or not self.inBounds():
@@ -135,35 +135,28 @@ struct Snake(CollectionElement, Hashable):
                                         Snake.inBounds(self.x_position + 1, self.y_position), 
                                         Snake.inBounds(self.x_position, self.y_position - 1), 
                                         Snake.inBounds(self.x_position, self.y_position + 1),
-                                        Snake.inBody(self.history, self.x_position - 1, self.y_position), 
-                                        Snake.inBody(self.history, self.x_position + 1, self.y_position), 
-                                        Snake.inBody(self.history, self.x_position, self.y_position - 1), 
-                                        Snake.inBody(self.history, self.x_position, self.y_position + 1)]).to(torch.float32).unsqueeze(1)
+                                        Snake.inBody(self.body_set, self.x_position - 1, self.y_position), 
+                                        Snake.inBody(self.body_set, self.x_position + 1, self.y_position), 
+                                        Snake.inBody(self.body_set, self.x_position, self.y_position - 1), 
+                                        Snake.inBody(self.body_set, self.x_position, self.y_position + 1)]).to(torch.float32).unsqueeze(1)
 
-        var output_array = DynamicVector[Float32]()
         var output_tensor = self.neural_network.feed(input_tensor)
+        
         _ = torch.flatten(output_tensor)
-        _ = torch.sort(output_tensor)
-        var previous_position = self.history[-2]
+        var potential_body_parts = VariadicList((self.x_position, self.y_position + 1), (self.x_position - 1, self.y_position), (self.x_position, self.y_position - 1), (self.x_position + 1, self.y_position))
+        for index in range(len(potential_body_parts)):
+            var position = KeyPosition(potential_body_parts[index].get[0, Int](), potential_body_parts[index].get[1, Int]())
+            if position in self.body_set:
+                _ = output_tensor.__setitem__(index, 0, -2)
+        
+        var choice = torch.argmax(output_tensor).item()
+        
 
-        for ptr in output_tensor:
-            var choice = ptr.get_unsafe_pointer()[0]
-            # Up
-            if choice == 0 and previous_position.get[1, Int]() != self.y_position + 1:
-                self.move(self.x_position, self.y_position + 1)
-                break
-            # Left
-            elif choice == 1 and previous_position.get[0, Int]() != self.y_position - 1:
-                self.move(self.x_position - 1, self.y_position)
-                break
-            # Down
-            elif choice == 2 and previous_position.get[1, Int]() != self.y_position - 1:
-                self.move(self.x_position, self.y_position - 1)
-                break
-            # Right
-            elif choice == 3 and previous_position.get[0, Int]() != self.y_position + 1:
-                self.move(self.x_position + 1, self.y_position)
-                break
+
+        self.move(self.x_position, self.y_position + 1)
+
+        
+            
 
         self.update(x_position_fruit, y_position_fruit)
 
@@ -198,5 +191,13 @@ struct Snake(CollectionElement, Hashable):
                 pygame.draw.rect(screen, (60, 60, 60), ((self.x_position + game_width_offset) * game_scale, (self.y_position + game_height_offset) * game_scale, game_scale, game_scale))
         except ValueError:
             pass
+
+fn main():
+    var snake_list = DynamicVector[Snake]()
+    var snake = Snake(4)
+    snake.x_position = 12
+    snake.y_position = -5
+    snake_list.append(snake)
+    snake_list[0].x_position = 2
 
     
