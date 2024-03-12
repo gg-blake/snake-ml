@@ -9,8 +9,7 @@ from logger import Logger
 @value
 struct Snake(CollectionElement, Hashable):
     var id: Int
-    var x_position: Int
-    var y_position: Int
+    var pos_ptr: Pointer[Int]
     var score: Int
     var active: Bool
     var min_dist: Float32
@@ -26,8 +25,9 @@ struct Snake(CollectionElement, Hashable):
             var collections = Python.none()
             self.body = Python.none()
         self.id = id
-        self.x_position = 0
-        self.y_position = 0
+        self.pos_ptr = Pointer[Int].alloc(2)
+        self.pos_ptr.store(0, 1)
+        self.pos_ptr.store(1, 0)
         self.score = starting_score
         self.active = True
         self.min_dist = game_width * game_height
@@ -40,7 +40,11 @@ struct Snake(CollectionElement, Hashable):
         self.neural_network = nn_data
 
     fn __copyinit__(inout self, existing: Self):
-        self = Snake(existing.neural_network, existing.id)
+        self = Self(existing.neural_network, existing.id)
+        self.pos_ptr = existing.pos_ptr
+        self.body = existing.body
+        
+
 
     fn __moveinit__(inout self, owned existing: Self):
         self = existing
@@ -56,7 +60,7 @@ struct Snake(CollectionElement, Hashable):
         return hash(self) == hash(other)
 
     fn inBounds(self) -> Int:
-        if (self.x_position >= -game_width_offset and self.x_position <= game_width_offset and self.y_position >= -game_height_offset and self.y_position <= game_height_offset):
+        if (self.pos_ptr.load[Int](0) >= -game_width_offset and self.pos_ptr.load[Int](0) <= game_width_offset and self.pos_ptr.load[Int](1) >= -game_height_offset and self.pos_ptr.load[Int](1) <= game_height_offset):
             return 1
         
         return 0
@@ -72,7 +76,7 @@ struct Snake(CollectionElement, Hashable):
         var count = 0
         for key_ref in self.body_set:
             var key = key_ref[]
-            if key.x == self.x_position and key.y == self.y_position:
+            if key.x == self.pos_ptr.load[Int](0) and key.y == self.pos_ptr.load[Int](1):
                 count += 1
 
         if count > 1:
@@ -94,11 +98,10 @@ struct Snake(CollectionElement, Hashable):
         return 0
 
     fn move(inout self, x: Int, y: Int) raises:
-        print(self.x_position, self.y_position)
         
 
-        var key = KeyPosition(self.x_position, self.y_position)
-        var tuple = (self.x_position, self.y_position)
+        var key = KeyPosition(self.pos_ptr.load[Int](0), self.pos_ptr.load[Int](1))
+        var tuple = self.pos_ptr.load[Int](0), self.pos_ptr.load[Int](1)
         
         _ = self.body.appendleft(tuple)
         self.body_set.add(key)
@@ -107,17 +110,18 @@ struct Snake(CollectionElement, Hashable):
             print(self.body)
             var tail_tuple = self.body.pop()
             var tail_key = KeyPosition(tail_tuple[0].to_float64().to_int(), tail_tuple[1].to_float64().to_int())
+            print("removing", tail_key.__str__())
             self.body_set.remove(tail_key)
 
-        self.x_position = x
-        self.y_position = y
+        self.pos_ptr.store[Int](0, x)
+        self.pos_ptr.store[Int](1, y)
 
         
 
     fn update(inout self, x_position_fruit: Int, y_position_fruit: Int):
         if self.inBody() or not self.inBounds():
             self.active = False
-        elif self.x_position == x_position_fruit and self.y_position == y_position_fruit:
+        elif self.pos_ptr.load[Int](0) == x_position_fruit and self.pos_ptr.load[Int](1) == y_position_fruit:
             self.score += 1
             self.min_dist = game_width * game_height
 
@@ -130,20 +134,20 @@ struct Snake(CollectionElement, Hashable):
         if not self.active:
             return
 
-        var input_tensor = torch.tensor([self.x_position, self.y_position, x_position_fruit, y_position_fruit, 
-                                        Snake.inBounds(self.x_position - 1, self.y_position), 
-                                        Snake.inBounds(self.x_position + 1, self.y_position), 
-                                        Snake.inBounds(self.x_position, self.y_position - 1), 
-                                        Snake.inBounds(self.x_position, self.y_position + 1),
-                                        Snake.inBody(self.body_set, self.x_position - 1, self.y_position), 
-                                        Snake.inBody(self.body_set, self.x_position + 1, self.y_position), 
-                                        Snake.inBody(self.body_set, self.x_position, self.y_position - 1), 
-                                        Snake.inBody(self.body_set, self.x_position, self.y_position + 1)]).to(torch.float32).unsqueeze(1)
+        var input_tensor = torch.tensor([self.pos_ptr.load[Int](0), self.pos_ptr.load[Int](1), x_position_fruit, y_position_fruit, 
+                                        Snake.inBounds(self.pos_ptr.load[Int](0) - 1, self.pos_ptr.load[Int](1)), 
+                                        Snake.inBounds(self.pos_ptr.load[Int](0) + 1, self.pos_ptr.load[Int](1)), 
+                                        Snake.inBounds(self.pos_ptr.load[Int](0), self.pos_ptr.load[Int](1) - 1), 
+                                        Snake.inBounds(self.pos_ptr.load[Int](0), self.pos_ptr.load[Int](1) + 1),
+                                        Snake.inBody(self.body_set, self.pos_ptr.load[Int](0) - 1, self.pos_ptr.load[Int](1)), 
+                                        Snake.inBody(self.body_set, self.pos_ptr.load[Int](0) + 1, self.pos_ptr.load[Int](1)), 
+                                        Snake.inBody(self.body_set, self.pos_ptr.load[Int](0), self.pos_ptr.load[Int](1) - 1), 
+                                        Snake.inBody(self.body_set, self.pos_ptr.load[Int](0), self.pos_ptr.load[Int](1) + 1)]).to(torch.float32).unsqueeze(1)
 
         var output_tensor = self.neural_network.feed(input_tensor)
         
         _ = torch.flatten(output_tensor)
-        var potential_body_parts = VariadicList((self.x_position, self.y_position + 1), (self.x_position - 1, self.y_position), (self.x_position, self.y_position - 1), (self.x_position + 1, self.y_position))
+        var potential_body_parts = VariadicList((self.pos_ptr.load[Int](0), self.pos_ptr.load[Int](1) + 1), (self.pos_ptr.load[Int](0) - 1, self.pos_ptr.load[Int](1)), (self.pos_ptr.load[Int](0), self.pos_ptr.load[Int](1) - 1), (self.pos_ptr.load[Int](0) + 1, self.pos_ptr.load[Int](1)))
         for index in range(len(potential_body_parts)):
             var position = KeyPosition(potential_body_parts[index].get[0, Int](), potential_body_parts[index].get[1, Int]())
             if position in self.body_set:
@@ -153,7 +157,14 @@ struct Snake(CollectionElement, Hashable):
         
 
 
-        self.move(self.x_position, self.y_position + 1)
+        if choice == 0:
+            self.move(self.pos_ptr[0], self.pos_ptr[1] - 1)
+        elif choice == 1:
+            self.move(self.pos_ptr[0] + 1, self.pos_ptr[1])
+        elif choice == 2:
+            self.move(self.pos_ptr[0], self.pos_ptr[1] + 1)
+        elif choice == 3:
+            self.move(self.pos_ptr[0] - 1, self.pos_ptr[1])
 
         
             
@@ -186,18 +197,9 @@ struct Snake(CollectionElement, Hashable):
         # Draw the head of the snake
         try:
             if true_score + 1 >= current_food_count:
-                pygame.draw.rect(screen, (120, 255, 120), ((self.x_position + game_width_offset) * game_scale, (self.y_position + game_height_offset) * game_scale, game_scale, game_scale))
+                pygame.draw.rect(screen, (120, 255, 120), ((self.pos_ptr.load[Int](0) + game_width_offset) * game_scale, (self.pos_ptr.load[Int](1) + game_height_offset) * game_scale, game_scale, game_scale))
             else:
-                pygame.draw.rect(screen, (60, 60, 60), ((self.x_position + game_width_offset) * game_scale, (self.y_position + game_height_offset) * game_scale, game_scale, game_scale))
+                pygame.draw.rect(screen, (60, 60, 60), ((self.pos_ptr.load[Int](0) + game_width_offset) * game_scale, (self.pos_ptr.load[Int](1) + game_height_offset) * game_scale, game_scale, game_scale))
         except ValueError:
             pass
-
-fn main():
-    var snake_list = DynamicVector[Snake]()
-    var snake = Snake(4)
-    snake.x_position = 12
-    snake.y_position = -5
-    snake_list.append(snake)
-    snake_list[0].x_position = 2
-
     

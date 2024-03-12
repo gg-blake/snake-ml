@@ -16,7 +16,7 @@ alias starting_score: Int = 5
 alias game_scale: Int = 13
 
 struct Population[snake_count: Int]:
-    var habitat: DynamicVector[Snake]
+    var habitat: Dict[Int, Snake]
     var food_array: DynamicVector[KeyPosition]
     var active: Bool
     var generation: Int
@@ -29,14 +29,14 @@ struct Population[snake_count: Int]:
         _ = pygame.display.set_caption("Snake AI")
         self.screen = pygame.display.set_mode((game_width * game_scale, game_height * game_scale))
         self.clock = pygame.time.Clock()
-        self.habitat = DynamicVector[Snake]()
+        self.habitat = Dict[Int, Snake]()
+        
         self.food_array = DynamicVector[KeyPosition]()
         self.active = True
         self.generation = 0
         self.generate_food()
         for id in range(snake_count):
-            var snake_obj = Snake(id)
-            self.habitat.append(snake_obj)
+            self.habitat[id] = Snake(id)
 
     fn generate_food(inout self) raises:
         var pyrandom = Python.import_module("random")
@@ -44,39 +44,38 @@ struct Population[snake_count: Int]:
         var rand_y = pyrandom.randint(-game_height_offset, game_height_offset).to_float64().to_int()
         self.food_array.append(KeyPosition(rand_x, rand_y))
 
-    fn update_habitat(inout self) raises:
+    fn update_habitat(inout self) raises -> Bool:
         var pygame = Python.import_module("pygame")
+        var survived = False
 
         _ = self.screen.fill((0, 0, 0))
         var index = 0
         for index in range(len(self.habitat)):
-            var snake = self.habitat[index]
-            if snake.score - starting_score >= len(self.food_array):
+            if self.habitat[index].score - starting_score >= len(self.food_array):
                 self.generate_food()
-            var current_snake_fruit = self.food_array[snake.score - starting_score]
-            snake.think(current_snake_fruit.x, current_snake_fruit.y)
+            var current_snake_fruit = self.food_array[self.habitat[index].score - starting_score]
+            self.habitat[index].think(current_snake_fruit.x, current_snake_fruit.y)
 
-            var distance: Float32 = Population[snake_count].euclidean_distance(snake.x_position, 
-                snake.y_position, 
+            var distance: Float32 = Population[snake_count].euclidean_distance(self.habitat[index].pos_ptr.load[Int](0), 
+                self.habitat[index].pos_ptr.load[Int](1), 
                 current_snake_fruit.x, 
                 current_snake_fruit.y)
 
-            if distance < snake.min_dist:
-                snake.min_dist = distance
+            if distance < self.habitat[index].min_dist:
+                self.habitat[index].min_dist = distance
 
-            _ = snake.draw(len(self.food_array), self.screen)
+            if self.habitat[index].active:
+                survived = True
+
+            _ = self.habitat[index].draw(len(self.food_array), self.screen)
+
+        
 
         self.draw_food()
         _ = pygame.display.update()
         _ = self.clock.tick(60)
 
-    fn habitat_status(self) -> Bool:
-        for snake_reference in self.habitat:
-            var snake = snake_reference[]
-            if not snake.active:
-                return False
-
-        return True
+        return survived
 
     @staticmethod
     fn fitness(snake: Snake) -> Float32:
