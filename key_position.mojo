@@ -1,76 +1,64 @@
 from python import Python
 from collections import Set
+from math import sqrt
 
-
-struct DimSet(Copyable, Movable):
-    var set: Set[KeyTuple]
-    var Point: PythonObject
-
-    fn __init__(inout self):
-        try:
-            var collections = Python.import_module("collections")
-            self.Point = collections.namedtuple('Point', ['x', 'y'])
-        except:
-            self.Point = Python.none()
-        self.set = Set[KeyTuple]()
-
-    fn __contains__(self, key: KeyTuple) -> Bool:
-        return key in self.set
-
-    fn __str__(self) -> String:
-        var result: String = "{"
-        var index = 1
-        for ref in self.set:
-            var item = ref[]
-            if index != len(self.set):
-                result = result + item.__str__() + ", "
-            else:
-                result = result + item.__str__() + "}"
-            index += 1
-        return result
-
-    fn __copyinit__(inout self, existing: Self):
-        self = Self()
-        self.Point = existing.Point
-        for item_ref in existing.set:
-            self.set.add(item_ref[])
-
-    fn __moveinit__(inout self, owned existing: Self):
-        self = Self()
-        self.Point = existing.Point
-        for item_ref in existing.set:
-            self.set.add(item_ref[])
-
-    fn add(inout self, x: Int, y: Int) raises:
-        self.set.add(KeyTuple(x, y, self.Point))
-
-    fn remove(inout self, x: Int, y: Int) raises:
-        self.set.remove(KeyTuple(x, y, self.Point))
-    
-
+alias dtypesize = simdwidthof[DType.float64]() * 2
 
 @value
 struct KeyTuple(KeyElement):
-    var p: PythonObject
-    var x: Int
-    var y: Int
+    var data: SIMD[DType.float64, 2]
+    var hash: Int
 
-    fn __init__(inout self, x: Int, y: Int, Point: PythonObject) raises:
-        self.p = Point(x, y)
-        self.x = x
-        self.y = y
+    fn __init__(inout self, x: Float64, y: Float64):
+        self.data = SIMD[DType.float64, 2](x, y)
+        self.hash = self.data.__hash__()
+        
 
     fn __hash__(self) -> Int:
-        try:
-            return self.p.__hash__().to_float64().to_int()
-        except:
-            return 0
+        return self.hash
 
     fn __eq__(self, other: Self) -> Bool:
-        return self.x == other.x and self.y == other.y
+        return self.hash == other.hash
 
-    fn __repr__(self) -> String:
-        return self.__str__()
+    fn __ne__(self, other: Self) -> Bool:
+        return not self == other 
 
     fn __str__(self) -> String:
-        return "(" + str(self.x) + ", " + str(self.y) + ")"
+        return self.data
+
+    fn __getitem__(self, index: Int) raises -> Float64:
+        return self.data[index]
+
+    fn __setitem__(inout self, index: Int, value: Float64) raises:
+        self.data[index] = value
+
+    fn __len__(self) -> Int:
+        return len(self.data)
+
+    # Calculates the euclidean distance
+    fn distance(self: Self, other: Self) raises -> Float64:
+        if len(self) != 2 or len(other) != 2:
+            raise "Both KeyTuples must be of size 2 to calculate euclidean distance"
+
+        return sqrt((self[0] - other[0])**2 + (self[1] - other[1])**2)
+
+fn print_set(s: Set[Int]):
+    print("{", end="")
+    for ref in s:
+        print(ref[], end="")
+    print("}")
+
+fn main() raises:
+    var test = Set[Int]()
+    var point_a = KeyTuple(x=2, y=4)
+    var point_b = KeyTuple(x=3, y=4)
+    var point_c = KeyTuple(x=2, y=4)
+    var a: PythonObject = [4, 5, 6]
+    print(a)
+    test.add(point_a.hash)
+    print_set(test)
+    test.add(point_b.hash)
+    print_set(test)
+    test.add(point_c.hash)
+    print_set(test)
+    
