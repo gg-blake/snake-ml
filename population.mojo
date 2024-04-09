@@ -4,7 +4,7 @@ from collections import Set, Dict
 from neural_network import NeuralNetwork
 from algorithm.sort import sort
 from logger import Logger
-from key_position import KeyTuple
+from key_position import Position
 import sys
 from math import sqrt
 
@@ -19,7 +19,7 @@ alias game_scale: Int = 13
 
 struct Population[snake_count: Int]:
     var habitat: Dict[Int, Snake]
-    var food_array: List[KeyTuple]
+    var food_array: List[Position]
     var active: Bool
     var generation: Int
     var clock: PythonObject
@@ -30,7 +30,7 @@ struct Population[snake_count: Int]:
         _ = pygame.display.set_caption("Snake AI")
         self.clock = pygame.time.Clock()
         self.habitat = Dict[Int, Snake]()
-        self.food_array = List[KeyTuple]()
+        self.food_array = List[Position]()
         self.active = True
         self.generation = 0
         self.generate_food()
@@ -52,7 +52,7 @@ struct Population[snake_count: Int]:
         var Point = collections.namedtuple('Point', ['x', 'y'])
         var rand_x = pyrandom.randint(-game_width_offset, game_width_offset).to_float64()
         var rand_y = pyrandom.randint(-game_height_offset, game_height_offset).to_float64()
-        self.food_array.append(KeyTuple(rand_x, rand_y))
+        self.food_array.append(Position(rand_x, rand_y))
 
     fn update_habitat(inout self, inout screen: PythonObject) raises -> Bool:
         var pygame = Python.import_module("pygame")
@@ -96,7 +96,7 @@ struct Population[snake_count: Int]:
 
     fn generate_next_habitat(inout self, survival_rate: Float32) raises:
         # I don't know how to implement Mojo built-in sort so this is my work around :(
-        self.food_array = List[KeyTuple]()
+        self.food_array = List[Position]()
         self.generate_food()
         var fitness_dict = Dict[Int, Int]()
         var fitness_array = List[Int]()
