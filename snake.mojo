@@ -1,21 +1,22 @@
 from python import Python
 from algorithm.sort import sort
-from population import dtype, nn_dtype, game_width, game_width_offset, game_height, game_height_offset, starting_score, game_scale, Population
+from population import nn_dtype, game_width, game_width_offset, game_height, game_height_offset, starting_score, game_scale, Population
 from tensor import Tensor, TensorShape
 from collections import Set
-from key_position import Position
+from key_position import Position, dtype
 from logger import Logger
-
+from sys import PrefetchRW, PrefetchLocality, PrefetchCache, PrefetchOptions
+from neural_network import NeuralNetwork
 
 struct Snake(CollectionElement, Hashable):
     var id: Int
-    var x: Int
-    var y: Int
+    var x: SIMD[dtype, 1]
+    var y: SIMD[dtype, 1]
     var score: Int
     var active: Bool
     var min_dist: Float32
     var neural_network: nn_dtype
-    var body: PythonObject
+    var body: List[Position]
     var body_set: Set[Position]
 
     fn __init__(inout self, id: Int):
@@ -26,15 +27,8 @@ struct Snake(CollectionElement, Hashable):
         self.active = True
         self.min_dist = game_width * game_height
         self.neural_network = nn_dtype(id)
-        self.body_set = Set[Position]()
-        try:
-            var collections = Python.import_module("collections")
-            self.body = collections.deque()
-        except:
-            var collections = Python.none()
-            self.body = Python.none()
-        
-        
+        self.body_set = Set[Position](Position(self.x + 4, self.y), Position(self.x + 3, self.y), Position(self.x + 2, self.y), Position(self.x + 1, self.y), Position(self.x + 4, self.y))
+        self.body = List(Position(self.x, self.y), Position(self.x + 1, self.y), Position(self.x + 1, self.y), Position(self.x + 3, self.y), Position(self.x + 4, self.y))
 
     fn __init__(inout self, nn_data: nn_dtype, id: Int):
         self.__init__(id)
@@ -111,6 +105,9 @@ struct Snake(CollectionElement, Hashable):
         
         return 0
 
+    fn fitness(self) -> SIMD[DType.float32, 1]:
+        return ((400 / (self.min_dist) + (self.score**2 * 20)))
+
     # DEBUG TOOL #
     fn print_body_set(self):
         print("{")
@@ -118,29 +115,30 @@ struct Snake(CollectionElement, Hashable):
             print(ref[], end="")
         print("}")
 
-    fn move(inout self, x: Int, y: Int) raises:
+    fn print_body(self):
+        print("[")
+        for ref in self.body:
+            print(ref[], end="")
+        print("]")
 
-        var key = Position(self.x, self.y)
-        var tuple = self.x, self.y
-        
-        _ = self.body.appendleft(tuple)
-        self.body_set.add(key)
+    fn move(inout self, x: SIMD[dtype, 1], y: SIMD[dtype, 1]) raises:
+        var new_position = Position(x, y)
+        var tmp_list = List[Position](new_position)
+        tmp_list.extend(self.body)
+        self.body = tmp_list
+        self.body_set.add(new_position)
 
-        if len(self.body) > self.score:
-            var tail_tuple = self.body.pop()
-            var tail_x = SIMD[DType.int32, 1](tail_tuple[0].to_float64().to_int()).cast[DType.float32]()
-            var tail_y = SIMD[DType.int32, 1](tail_tuple[1].to_float64().to_int()).cast[DType.float32]()
-            var tail_key = Position(tail_x, tail_y)
-            #print("removing", tail_key.__str__())
-            try:
-                self.body_set.remove(tail_key)
-            except:
-                pass
+        var pop_position = self.body.pop_back()
+        try:
+            self.body_set.remove(pop_position)
+        except ValueError:
+            self.active = False
 
-        self.x = x
-        self.y = y
+        if len(self.body_set) < self.score - 1:
+            self.active = False
+            
 
-        
+        self.x, self.y = x, y
 
     fn update(inout self, fruit_pos: Position):
         if self.inBody() or not self.inBounds():
@@ -152,40 +150,48 @@ struct Snake(CollectionElement, Hashable):
     fn distance(self, point: Position) raises -> Float32:
         return Position(self.x, self.y).distance(point)
 
+    @staticmethod
+    fn generate_offspring(parent_a: Snake, parent_b: Snake) raises -> Snake:
+        var child_a: Snake = Snake(nn_data=parent_a.neural_network, id=parent_a.id)
+        var child_b: Snake = Snake(nn_data=parent_b.neural_network, id=parent_b.id)
+        child_a.neural_network = NeuralNetwork.blend_genetic_traits(child_a.neural_network, child_b.neural_network, parent_a.id)
+        child_b.neural_network = NeuralNetwork.blend_genetic_traits(child_b.neural_network, child_a.neural_network, parent_a.id)
+        return child_a
+        
+
     fn think(inout self, fruit_pos: Position) raises:
+        if not self.active:
+            return
+            
         var torch = Python.import_module("torch")
         if torch.cuda.is_available():
             var device = torch.device("cuda")
         else:
             var device = torch.device("cpu")
-        if not self.active:
-            return
-
-        
-
-        var input_tensor = torch.tensor([self.x, self.y, fruit_pos[0], fruit_pos[1], 
-                                        Snake.inBounds(self.x - 1, self.y), 
-                                        Snake.inBounds(self.x + 1, self.y), 
-                                        Snake.inBounds(self.x, self.y - 1), 
-                                        Snake.inBounds(self.x, self.y + 1),
-                                        Snake.inBody(self.body_set, self.x - 1, self.y), 
-                                        Snake.inBody(self.body_set, self.x + 1, self.y), 
-                                        Snake.inBody(self.body_set, self.x, self.y - 1), 
-                                        Snake.inBody(self.body_set, self.x, self.y + 1)]).to(torch.float32).unsqueeze(1)
+    
+        var input_tensor = torch.tensor([self.x.to_int(), self.y.to_int(), fruit_pos.x.to_int(), fruit_pos.y.to_int(), 
+                                        Snake.inBounds(self.x.to_int() - 1, self.y.to_int()), 
+                                        Snake.inBounds(self.x.to_int() + 1, self.y.to_int()), 
+                                        Snake.inBounds(self.x.to_int(), self.y.to_int() - 1), 
+                                        Snake.inBounds(self.x.to_int(), self.y.to_int() + 1),
+                                        Snake.inBody(self.body_set, self.x.to_int() - 1, self.y.to_int()), 
+                                        Snake.inBody(self.body_set, self.x.to_int() + 1, self.y.to_int()), 
+                                        Snake.inBody(self.body_set, self.x.to_int(), self.y.to_int() - 1), 
+                                        Snake.inBody(self.body_set, self.x.to_int(), self.y.to_int() + 1)]).to(torch.float32).unsqueeze(1)
 
         var output_tensor = self.neural_network.feed(input_tensor)
         
         
-
-        _ = torch.flatten(output_tensor)
+        
+        torch.flatten(output_tensor)
         var potential_body_parts = List(List(self.x, self.y + 1), List(self.x - 1, self.y), List(self.x, self.y - 1), List(self.x + 1, self.y))
         for index in range(len(potential_body_parts)):
             var position = Position(potential_body_parts[index][0], potential_body_parts[index][1])
             if position in self.body_set:
-                _ = output_tensor.__setitem__(index, -2)
+                output_tensor.__setitem__(index, -2)
         
         var choice = torch.argmax(output_tensor).item()
-        # {(0, 1), (-1, 1), (-1, 2), (-2, 2), (-2, 3), (-3, 3)}
+
         if choice == 0:
             self.move(self.x, self.y - 1)
         elif choice == 1:
@@ -195,11 +201,12 @@ struct Snake(CollectionElement, Hashable):
         elif choice == 3:
             self.move(self.x - 1, self.y)
         
-
         self.update(fruit_pos)
+        
+        
 
     # Draws visual representation of this Snake object to the running pygame window
-    fn draw(self, current_food_count: Int, inout screen: PythonObject):
+    fn draw(borrowed self, current_food_count: Int, screen: PythonObject):
         var pygame = Python.none()
         try:
             pygame = Python.import_module("pygame")
@@ -212,28 +219,39 @@ struct Snake(CollectionElement, Hashable):
         # Draw the body
         var count = 0
         
+        if not len(self.body_set) >= 1:
+            return
+
         
-        for key_ref in self.body_set:
-            var key = key_ref[]
-            count += 1
+
+        for ref in self.body_set:
+            var key = ref.get_unsafe_pointer()[]
+            
+            
             try:
-                var tmp_key = Position(self.x, self.y)
+                
+                
                 # Points in the body get darker the closer they are to the end
                 var tail_weight = int(count / len(self.body) * 32 + int((true_score + 1) / current_food_count * 128))
                 # Draw rect to screen
                 if self.score - starting_score + 1 >= current_food_count:
-                    pygame.draw.rect(screen, (200, 30, 30), ((key[0] + game_width_offset) * game_scale, (key[1] + game_height_offset) * game_scale, game_scale, game_scale))
+                    pygame.draw.rect(screen, (200, 30, 30), ((key.x.to_int() + game_width_offset) * game_scale, (key.y.to_int() + game_height_offset) * game_scale, game_scale, game_scale))
                 else:
-                    pygame.draw.rect(screen, (200, 0, 0), (key[0] + game_width_offset) * game_scale, (key[1] + game_height_offset) * game_scale, game_scale, game_scale)
+                    pygame.draw.rect(screen, (200, 0, 0), (key.x.to_int() + game_width_offset) * game_scale, (key.y.to_int() + game_height_offset) * game_scale, game_scale, game_scale)
+                
             except ValueError:
                 pass
+
+            count += 1
+            
             
         # Draw the head of the snake
         try:
             if true_score + 1 >= current_food_count:
-                pygame.draw.rect(screen, (120, 255, 120), ((self.x + game_width_offset) * game_scale, (self.y + game_height_offset) * game_scale, game_scale, game_scale))
+                pygame.draw.rect(screen, (120, 255, 120), ((self.x.to_int() + game_width_offset) * game_scale, (self.y.to_int() + game_height_offset) * game_scale, game_scale, game_scale))
             else:
-                pygame.draw.rect(screen, (60, 60, 60), ((self.x + game_width_offset) * game_scale, (self.y + game_height_offset) * game_scale, game_scale, game_scale))
+                pass
+                pygame.draw.rect(screen, (60, 60, 60), ((self.x.to_int() + game_width_offset) * game_scale, (self.y.to_int() + game_height_offset) * game_scale, game_scale, game_scale))
         except ValueError:
             pass
 
