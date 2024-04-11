@@ -1,12 +1,16 @@
 from python import Python
 from snake import Snake
 from collections import Set, Dict
+from collections.optional import Optional
 from neural_network import NeuralNetwork
 from algorithm.sort import sort
 from logger import Logger
 from key_position import Position
 import sys
 from math import sqrt
+from logger import Logger
+from time import sleep
+import math
 
 alias dtype = DType.float32
 alias nn_dtype = NeuralNetwork[12, 16, 4]
@@ -18,7 +22,7 @@ alias starting_score: Int = 5
 alias game_scale: Int = 13
 
 struct Population[snake_count: Int]:
-    var habitat: Dict[Int, Snake]
+    var habitat: List[Snake]
     var food_array: List[Position]
     var active: Bool
     var generation: Int
@@ -29,17 +33,23 @@ struct Population[snake_count: Int]:
         _ = pygame.init()
         _ = pygame.display.set_caption("Snake AI")
         self.clock = pygame.time.Clock()
-        self.habitat = Dict[Int, Snake]()
+        self.habitat = List[Snake]()
         self.food_array = List[Position]()
         self.active = True
         self.generation = 0
-        self.generate_food()
+        
+        
         for id in range(snake_count):
-            self.habitat[id] = Snake(id)
+            self.habitat.append(Snake(id))
+
+        self.generate_food()
+            
+
+
 
     fn print_locations(self):
-        for ref in self.habitat.items():
-            var snake: Snake = ref[].value
+        for ref in self.habitat:
+            var snake: Snake = ref[]
             print("[", snake.x, snake.y, "]", end="")
 
         print(",")
@@ -49,99 +59,105 @@ struct Population[snake_count: Int]:
     fn generate_food(inout self) raises:
         var pyrandom = Python.import_module("random")
         var collections = Python.import_module("collections")
-        var Point = collections.namedtuple('Point', ['x', 'y'])
-        var rand_x = pyrandom.randint(-game_width_offset, game_width_offset).to_float64()
-        var rand_y = pyrandom.randint(-game_height_offset, game_height_offset).to_float64()
+        var rand_x = pyrandom.randint(-game_width_offset, game_width_offset).to_float64().to_int()
+        var rand_y = pyrandom.randint(-game_height_offset, game_height_offset).to_float64().to_int()
         self.food_array.append(Position(rand_x, rand_y))
 
-    fn update_habitat(inout self, inout screen: PythonObject) raises -> Bool:
+    fn update_habitat(inout self, borrowed screen: PythonObject) raises -> Bool:
         var pygame = Python.import_module("pygame")
         var survived = False
-        
 
-        _ = screen.fill((0, 0, 0))
+        screen.fill((0, 0, 0))
         var index = 0
         for index in range(len(self.habitat)):
-            
             if self.habitat[index].score - starting_score >= len(self.food_array):
                 self.generate_food()
+            
             var current_snake_fruit = self.food_array[self.habitat[index].score - starting_score]
-            Snake.think(self.habitat[index], current_snake_fruit)
-
-            var distance: Float32 = self.habitat[index].distance(current_snake_fruit)
+            var current_snake_fruit_position = Position(current_snake_fruit.x, current_snake_fruit.y)
+            Snake.think(self.habitat[index], current_snake_fruit_position)
+            
+            var distance: Float32 = self.habitat[index].distance(current_snake_fruit_position)
             
             if distance < self.habitat[index].min_dist:
                 self.habitat[index].min_dist = distance
 
             if self.habitat[index].active:
                 survived = True
-
-            _ = self.habitat[index].draw(len(self.food_array), screen)
-            #self.print_locations()
-
+            
+            self.habitat[index].draw(len(self.food_array), screen)
+            
         self.draw_food(screen)
         
-        _ = pygame.display.update()
-        _ = self.clock.tick(60)
+        pygame.display.update()
+        #self.clock.tick(60)
 
         return survived
-
-    @staticmethod
-    fn fitness(snake: Snake) -> Float32:
-        return ((400 / (snake.min_dist + 1)) + (snake.score**2 * 20))
 
     @staticmethod
     fn euclidean_distance(x1: Int, y1: Int, x2: Int, y2: Int) -> Float32:
         return sqrt((x1 - x2)**2 + (y1 - y2)**2)
 
     fn generate_next_habitat(inout self, survival_rate: Float32) raises:
-        # I don't know how to implement Mojo built-in sort so this is my work around :(
-        self.food_array = List[Position]()
-        self.generate_food()
-        var fitness_dict = Dict[Int, Int]()
-        var fitness_array = List[Int]()
-        var index = 0
-        for snake_reference in self.habitat:
-            var current_snake: Snake = snake_reference[]
-            var current_snake_fitness: Int = Population[snake_count].fitness(current_snake).to_int()
+        var new_habitat: List[Snake] = List[Snake]()
+        var snake_fitnesses: List[Float32] = List[Float32]()
 
-            fitness_dict[current_snake_fitness] = index
-            fitness_array.append(current_snake_fitness)
-            index += 1
 
-        sort(fitness_array)
+        for index in range(0, snake_count):
+            snake_fitnesses.append(self.habitat[index].fitness())
 
-        # Resurrect the fittest snakes, their objects are preserved in the habitat
-        for index in range(snake_count):
-            var habitat_index = fitness_dict[fitness_array[index]]
-            self.habitat[habitat_index].active = True
+        sort(snake_fitnesses) # Sort in ascending order (low to high)
 
-        # For every two fit snakes, create two children with blended weights and biases and replace two unfit snake objects in the habitat
-        for index in range(snake_count * survival_rate, snake_count, 2):
-            var habitat_index = fitness_dict[fitness_array[index]]
-            var fit_traits_a: nn_dtype = self.habitat[fitness_dict[fitness_array[index - (snake_count // 2)]]].neural_network
-            var fit_traits_b: nn_dtype = self.habitat[fitness_dict[fitness_array[index - (snake_count // 2) + 1]]].neural_network
-            var new_traits: nn_dtype = NeuralNetwork.blend_genetic_traits(fit_traits_a, fit_traits_b, self.generation * snake_count + index)
-            var child: Snake = Snake(new_traits, self.generation * snake_count + index)
-            self.habitat[habitat_index] = child
-            self.habitat[habitat_index + 1] = child
-            self.habitat[habitat_index + 1].id += 1
+        var k = math.floor(snake_count - (snake_count * survival_rate)).to_int() # Reverse list index
+        var survival_threshold = snake_fitnesses[k] # Top k snakes live to next habitat
+        var parent_threshold = snake_fitnesses[-2] # Top two become parents
+        var parent_a: Optional[Int] = Optional[Int](None)
+        var parent_b: Optional[Int] = Optional[Int](None)
+        var child: Optional[Snake] = Optional[Snake](None)
 
-    fn draw_food(self, inout screen: PythonObject) raises:
+        for index in range(0, snake_count):
+            #self.habitat[index] = Snake(nn_data=self.habitat[index].neural_network, id=index)
+            
+            if self.habitat[index].fitness() >= parent_threshold and not parent_a:
+                parent_a = index
+                new_habitat.append(Snake(nn_data=self.habitat[index].neural_network, id=len(new_habitat)))
+            elif self.habitat[index].fitness() >= parent_threshold and not parent_b:
+                parent_b = index
+                new_habitat.append(Snake(nn_data=self.habitat[index].neural_network, id=len(new_habitat)))
+            elif self.habitat[index].fitness() >= parent_threshold:
+                new_habitat.append(Snake(nn_data=self.habitat[index].neural_network, id=len(new_habitat)))
+                child = Snake.generate_offspring(self.habitat[parent_a.value()], self.habitat[parent_b.value()])
+            elif self.habitat[index].fitness() >= survival_threshold:
+                new_habitat.append(Snake(nn_data=self.habitat[index].neural_network, id=len(new_habitat)))
+            else:
+                continue
+        
+        for index in range(0, snake_count):
+            if self.habitat[index].fitness() < survival_threshold and child:
+                var current_child_value = child.value()
+                var mutated_child = current_child_value.neural_network.mutate(12)
+                new_habitat.append(Snake(nn_data=mutated_child, id=len(new_habitat)))
+
+        self.habitat = new_habitat
+            
+
+
+
+
+    fn draw_food(self, screen: PythonObject) raises:
         var pygame = Python.import_module("pygame")
-        var last_food_x = self.food_array[-1][0] + game_width_offset
-        var last_food_y = self.food_array[-1][1] + game_height_offset
-        _ = pygame.draw.rect(screen, (0, 100, 0), (last_food_x * game_scale, last_food_y * game_scale, game_scale, game_scale))
+        var last_food_x = self.food_array[-1].x + game_width_offset
+        var last_food_y = self.food_array[-1].y + game_height_offset
+        pygame.draw.rect(screen, (0, 100, 0), (last_food_x.to_int() * game_scale, last_food_y.to_int() * game_scale, game_scale, game_scale))
         if len(self.food_array) <= 1:
             return
 
         for index in range(0, len(self.food_array) - 1):
             var food = self.food_array[index]
-            var food_x = food[0] + game_width_offset
-            var food_y = food[1] + game_height_offset
+            var food_x = food.x + game_width_offset
+            var food_y = food.y + game_height_offset
             # Draws visual representation of this Food object to the running pygame window
-            _ = pygame.draw.rect(screen, (0, 200, 0), (food_x * game_scale, food_y * game_scale, game_scale, game_scale))
+            pygame.draw.rect(screen, (0, 200, 0), (int(food_x) * game_scale, int(food_y) * game_scale, game_scale, game_scale))
             
 
         
-    
