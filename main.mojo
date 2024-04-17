@@ -3,7 +3,7 @@ from population import Population, game_width, game_height, game_scale
 from logger import Logger
 from time import sleep
 
-alias snake_count: Int = 200 # Keep this 30 and under to reduce risk of segmentation error when adding `Position` to `self.body_set`
+alias snake_count: Int = 50 # Keep this 30 and under to reduce risk of segmentation error when adding `Position` to `self.body_set`
 
 fn main() raises:
     Logger.notice("Starting simulation of " + str(snake_count) + " snakes...")
@@ -14,14 +14,14 @@ fn main() raises:
     var run = True
     while run:
         var count = 0
-        while population.update_habitat(screen) and count < 400 and run:
+        while count < 100 and run:
             var events = pygame.event.get()
             for event in events:
                 if event.type == pygame.QUIT:
                     run = False
-            #count += 1
+
+            var alive = population.update_habitat(screen)
+            count += 1
             Logger.notice("Updating habitat")
         Logger.notice("Generation has died. Generating next habitat...")
-        population.generate_next_habitat(survival_rate=0.2)
-        
-    
+        population.generate_next_habitat(survival_rate=0.5)
