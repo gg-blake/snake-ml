@@ -6,9 +6,10 @@ from neural_network import NeuralNetwork
 from algorithm.sort import sort, partition
 from algorithm.functional import parallelize
 from math import sqrt, abs, floor
+from tensor import Tensor
 
 alias dtype = DType.float32
-alias nn_dtype = NeuralNetwork[20, 20, 4]
+alias neural_network_spec = List[Int](20, 20, 4)
 alias game_width: Int = 40
 alias game_width_offset: Int = game_width // 2
 alias game_height: Int = 40
@@ -21,13 +22,11 @@ struct Population[snake_count: Int]:
     var food_array: List[SIMD[dtype, 2]]
     var active: Bool
     var generation: Int
-    var clock: PythonObject
 
     fn __init__(inout self) raises:
         var pygame = Python.import_module("pygame")
         pygame.init()
         pygame.display.set_caption("Snake AI")
-        self.clock = pygame.time.Clock()
         self.habitat = AnyPointer[Snake].alloc(snake_count)
         for id in range(snake_count):
             self.habitat[id] = Snake()
@@ -37,10 +36,6 @@ struct Population[snake_count: Int]:
         self.generation = 0
         self.generate_food()
 
-    fn print_locations(self):
-        for i in range(snake_count):
-            print(self.habitat[i].position)
-
     fn generate_food(inout self) raises:
         var pyrandom = Python.import_module("random")
         var collections = Python.import_module("collections")
@@ -48,83 +43,26 @@ struct Population[snake_count: Int]:
         var rand_y = pyrandom.randint(-game_height_offset, game_height_offset).to_float64().to_int()
         self.food_array.append(SIMD[dtype, 2](rand_x, rand_y))
 
-    fn update_habitat(inout self, borrowed screen: PythonObject) raises -> Bool:
+    fn update_habitat(inout self, inout screen: PythonObject) raises:
         var pygame = Python.import_module("pygame")
-        var survived = False
-
         screen.fill((0, 0, 0))
-        
+
+        self.active = False
         for index in range(snake_count):
             if self.habitat[index].score - starting_score >= len(self.food_array):
                 self.generate_food()
             
             var current_snake_fruit = self.food_array[self.habitat[index].score - starting_score]
-            var current_snake_fruit_position = SIMD[dtype, 2](current_snake_fruit[0], current_snake_fruit[1])
-            self.habitat[index].update(current_snake_fruit_position)
-            
-            var distance: Float32 = self.habitat[index].distance(current_snake_fruit_position)
-            
-            if distance < self.habitat[index].min_dist:
-                self.habitat[index].min_dist = distance
-
-            if self.habitat[index].direction != SIMD[dtype, 2](0, 0):
-                survived = True 
-            
-            self.habitat[index].draw(len(self.food_array), screen)
+            self.habitat[index].update(current_snake_fruit, len(self.food_array), screen)
+        
+            if self.habitat[index].direction[0] != 0 or self.habitat[index].direction[1] != 0:
+                self.active = True
             
         self.draw_food(screen)
-
-        for index in range(snake_count):
-            print(self.habitat[index].direction)
-        
         pygame.display.update()
-        #self.clock.tick(60)
-
-        return survived
-
-    # TODO: Fix parallelize functionality
-    fn update_habitat_parallelized(inout self, borrowed screen: PythonObject) raises -> Bool:
-        var pygame = Python.import_module("pygame")
-        var survived = False
-        screen.fill((0, 0, 0))
-    
-        @parameter
-        fn update_snake(index: Int):
-            if self.habitat[index].score - starting_score >= len(self.food_array):
-                try:
-                    self.generate_food()
-                except Error:
-                    print(Error)
-            
-            var current_snake_fruit = self.food_array[self.habitat[index].score - starting_score]
-            var current_snake_fruit_position = SIMD[dtype, 2](current_snake_fruit[0], current_snake_fruit[1])
-
-            try:
-                self.habitat[index].update(current_snake_fruit_position)
-            except Error:
-                print(Error)
-            
-            var distance: Float32 = self.habitat[index].distance(current_snake_fruit_position)
-            
-            if distance < self.habitat[index].min_dist:
-                self.habitat[index].min_dist = distance
-
-            if self.habitat[index].direction != SIMD[dtype, 2](0, 0):
-                survived = True 
-            
-            self.habitat[index].draw(len(self.food_array), screen)
-
-        parallelize[update_snake](snake_count)
-
-        return survived
-
-
-    @staticmethod
-    fn euclidean_distance(x1: Int, y1: Int, x2: Int, y2: Int) -> Float32:
-        return sqrt((x1 - x2)**2 + (y1 - y2)**2)
 
     fn generate_next_habitat(inout self, survival_rate: Float32) raises:
-        print("gen")
+        self.active = True
         #var new_habitat: List[Snake] = List[Snake]()
         var snake_fitnesses: List[Float32] = List[Float32]()
 
@@ -190,10 +128,6 @@ struct Population[snake_count: Int]:
 
         self.habitat = new_habitat'''
             
-
-
-
-
     fn draw_food(self, screen: PythonObject) raises:
         var pygame = Python.import_module("pygame")
         var last_food_x = self.food_array[-1][0] + game_width_offset
@@ -208,6 +142,23 @@ struct Population[snake_count: Int]:
             var food_y = food[1] + game_height_offset
             # Draws visual representation of this Food object to the running pygame window
             pygame.draw.rect(screen, (0, 200, 0), (int(food_x) * game_scale, int(food_y) * game_scale, game_scale, game_scale))
-            
 
+    fn save(self) raises:
+        var sum_of_nodes: Int = 0
+        for i in range(len(neural_network_spec)):
+            sum_of_nodes += neural_network_spec[i]
+
+        var layer_list = List[List[Tensor[dtype]]]()
+        for n in range((len(neural_network_spec) - 1) * 2):
+            var current_layer = List[Tensor[dtype]]()
+            for s in range(snake_count):
+                var layer_tensor = self.habitat[s].neural_network.export(n)
+                if s == 0:
+                    print(layer_tensor)
+                current_layer.append(layer_tensor)
+            layer_list.append(current_layer)
+
+fn main() raises:
+    var population = Population[10]()
+    population.save()   
         

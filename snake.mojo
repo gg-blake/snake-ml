@@ -1,5 +1,5 @@
 from python import Python
-from population import dtype, nn_dtype, game_width, game_width_offset, game_height, game_height_offset, starting_score, game_scale
+from population import dtype, neural_network_spec, game_width, game_width_offset, game_height, game_height_offset, starting_score, game_scale
 from neural_network import NeuralNetwork
 from math import abs, sqrt
 
@@ -8,13 +8,13 @@ struct Snake(Hashable):
     var direction: SIMD[dtype, 2]
     var score: Int
     var min_dist: SIMD[dtype, 1]
-    var neural_network: nn_dtype
+    var neural_network: NeuralNetwork[dtype]
     var history: List[SIMD[dtype, 2]]
 
     fn __init__(inout self) raises:
         self.position = SIMD[dtype, 2](0, 0)
         self.direction = SIMD[dtype, 2](-1, 0)
-        self.neural_network = nn_dtype()
+        self.neural_network = NeuralNetwork[dtype](spec=neural_network_spec)
         self.score = starting_score
         self.min_dist = game_width * game_height
         self.history = List[SIMD[dtype, 2]]()
@@ -22,7 +22,7 @@ struct Snake(Hashable):
             self.history.append(self.position + SIMD[dtype, 2](self.score - i - 1, 0))
 
     # Make a Snake instance and transfer ownership of NeuralNetwork
-    fn __init__(inout self, owned neural_network: nn_dtype):
+    fn __init__(inout self, owned neural_network: NeuralNetwork[dtype]):
         self.position = SIMD[dtype, 2](0, 0)
         self.direction = SIMD[dtype, 2](-1, 0)
         self.neural_network = neural_network
@@ -55,7 +55,7 @@ struct Snake(Hashable):
         result += "]"
         return result
 
-    fn update(inout self, fruit_position: SIMD[dtype, 2]) raises:
+    fn update(inout self, fruit_position: SIMD[dtype, 2], borrowed food_array_length: Int, inout screen: PythonObject) raises:
         var torch = Python.import_module("torch")
         var dist_left = abs(-game_width_offset - self.position[0])
         var dist_right = abs(game_width_offset - self.position[0])
@@ -127,10 +127,9 @@ struct Snake(Hashable):
 
         
 
-        var distance = self.distance(fruit_position)
-        if self.min_dist > distance:
-            self.min_dist = distance
+        
         self.move(fruit_position)
+        self.draw(food_array_length, screen)
         #print(self.position)
 
     fn in_bounds(self) -> Bool:
@@ -147,6 +146,10 @@ struct Snake(Hashable):
         if self.position + self.direction == fruit_position:
             self.score += 1
             self.min_dist = game_width * game_height
+        else:
+            var current_distance = self.distance(fruit_position)
+            if current_distance < self.min_dist:
+                self.min_dist = current_distance
 
         self.position += self.direction
         self.history = self.history[1:]

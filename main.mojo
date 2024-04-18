@@ -14,14 +14,16 @@ fn main() raises:
     var run = True
     while run:
         var count = 0
-        while count < 100 and run:
+        population.active = True
+        while count < 100 and run and population.active:
             var events = pygame.event.get()
             for event in events:
                 if event.type == pygame.QUIT:
                     run = False
 
-            var alive = population.update_habitat(screen)
+            population.update_habitat(screen)
+            
             count += 1
-            Logger.notice("Updating habitat")
+            
         Logger.notice("Generation has died. Generating next habitat...")
         population.generate_next_habitat(survival_rate=0.5)
