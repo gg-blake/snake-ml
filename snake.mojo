@@ -2,6 +2,7 @@ from python import Python
 from population import dtype, neural_network_spec, game_width, game_width_offset, game_height, game_height_offset, starting_score, game_scale
 from neural_network import NeuralNetwork
 from math import abs, sqrt
+from tensor import Tensor, TensorSpec
 
 struct Snake(Hashable):
     var position: SIMD[dtype, 2]
@@ -163,7 +164,6 @@ struct Snake(Hashable):
     fn generate_offspring(inout parent_a: Snake, inout parent_b: Snake) raises:
         parent_a.neural_network.average(parent_b.neural_network)
         parent_b.neural_network.average(parent_b.neural_network)
-        
 
     # Draws visual representation of this Snake object to the running pygame window
     fn draw(borrowed self, current_food_count: Int, screen: PythonObject):

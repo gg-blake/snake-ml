@@ -7,9 +7,11 @@ from algorithm.sort import sort, partition
 from algorithm.functional import parallelize
 from math import sqrt, abs, floor
 from tensor import Tensor
+from collections.vector import InlinedFixedVector
+from logger import Logger
 
 alias dtype = DType.float32
-alias neural_network_spec = List[Int](20, 20, 4)
+alias neural_network_spec = List[Int](20, 35, 27, 10, 4)
 alias game_width: Int = 40
 alias game_width_offset: Int = game_width // 2
 alias game_height: Int = 40
@@ -22,11 +24,13 @@ struct Population[snake_count: Int]:
     var food_array: List[SIMD[dtype, 2]]
     var active: Bool
     var generation: Int
+    var screen: PythonObject
 
     fn __init__(inout self) raises:
         var pygame = Python.import_module("pygame")
         pygame.init()
         pygame.display.set_caption("Snake AI")
+        self.screen = pygame.display.set_mode((game_width * game_scale, game_height * game_scale))
         self.habitat = AnyPointer[Snake].alloc(snake_count)
         for id in range(snake_count):
             self.habitat[id] = Snake()
@@ -36,6 +40,21 @@ struct Population[snake_count: Int]:
         self.generation = 0
         self.generate_food()
 
+    fn __getitem__(inout self, idx: Int) raises -> NeuralNetwork[dtype]:
+        if idx >= snake_count or idx < 0:
+            raise Error("Habitat index out of range")
+
+        return self.habitat[idx].neural_network
+
+    fn __getitem__(inout self, idx: Int, idx_layer: Int) raises -> PythonObject:
+        return self.habitat[idx].neural_network[idx_layer]
+
+    fn __getitem__(inout self, idx: Int, idx_layer: Int, idx_row: Int) raises -> PythonObject:
+        return self.habitat[idx].neural_network[idx_layer, idx_row]
+
+    fn __getitem__(inout self, idx: Int, idx_layer: Int, idx_row: Int, idx_col: Int) raises -> SIMD[dtype, 1]:
+        return self.habitat[idx].neural_network[idx_layer, idx_row, idx_col]
+
     fn generate_food(inout self) raises:
         var pyrandom = Python.import_module("random")
         var collections = Python.import_module("collections")
@@ -43,9 +62,12 @@ struct Population[snake_count: Int]:
         var rand_y = pyrandom.randint(-game_height_offset, game_height_offset).to_float64().to_int()
         self.food_array.append(SIMD[dtype, 2](rand_x, rand_y))
 
-    fn update_habitat(inout self, inout screen: PythonObject) raises:
+    fn update_habitat(inout self) raises:
+        Logger.cls()
+        Logger.status("Updating habitat.")
         var pygame = Python.import_module("pygame")
-        screen.fill((0, 0, 0))
+
+        self.screen.fill((0, 0, 0))
 
         self.active = False
         for index in range(snake_count):
@@ -53,15 +75,16 @@ struct Population[snake_count: Int]:
                 self.generate_food()
             
             var current_snake_fruit = self.food_array[self.habitat[index].score - starting_score]
-            self.habitat[index].update(current_snake_fruit, len(self.food_array), screen)
+            self.habitat[index].update(current_snake_fruit, len(self.food_array), self.screen)
         
             if self.habitat[index].direction[0] != 0 or self.habitat[index].direction[1] != 0:
                 self.active = True
             
-        self.draw_food(screen)
+        self.draw_food(self.screen)
         pygame.display.update()
 
     fn generate_next_habitat(inout self, survival_rate: Float32) raises:
+        Logger.notice("Generating new habitat.")
         self.active = True
         #var new_habitat: List[Snake] = List[Snake]()
         var snake_fitnesses: List[Float32] = List[Float32]()
@@ -143,22 +166,17 @@ struct Population[snake_count: Int]:
             # Draws visual representation of this Food object to the running pygame window
             pygame.draw.rect(screen, (0, 200, 0), (int(food_x) * game_scale, int(food_y) * game_scale, game_scale, game_scale))
 
-    fn save(self) raises:
-        var sum_of_nodes: Int = 0
-        for i in range(len(neural_network_spec)):
-            sum_of_nodes += neural_network_spec[i]
+    fn save(inout self) raises:
+        for habitat_index in range(snake_count):
+            self.habitat[habitat_index].neural_network.save(habitat_index)
 
-        var layer_list = List[List[Tensor[dtype]]]()
-        for n in range((len(neural_network_spec) - 1) * 2):
-            var current_layer = List[Tensor[dtype]]()
-            for s in range(snake_count):
-                var layer_tensor = self.habitat[s].neural_network.export(n)
-                if s == 0:
-                    print(layer_tensor)
-                current_layer.append(layer_tensor)
-            layer_list.append(current_layer)
+        var filename_prefix = "data/" + str(self.habitat[0].neural_network.__repr__())
+        Logger.notice("Population data serialized as " + filename_prefix + "-#-#")
 
-fn main() raises:
-    var population = Population[10]()
-    population.save()   
+    fn load(inout self) raises:
+        for habitat_index in range(snake_count):
+            self.habitat[habitat_index].neural_network.load(habitat_index)
+
+        var filename_prefix = "data/" + str(self.habitat[0].neural_network.__repr__())
+        Logger.notice("Population data deserialized from " + filename_prefix + "-#-#")
         

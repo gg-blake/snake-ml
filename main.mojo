@@ -3,27 +3,41 @@ from population import Population, game_width, game_height, game_scale
 from logger import Logger
 from time import sleep
 
-alias snake_count: Int = 50 # Keep this 30 and under to reduce risk of segmentation error when adding `Position` to `self.body_set`
+alias snake_count: Int = 50
+alias timeout: Int = 200 # Number of snakes steps before population is automatically updated
 
 fn main() raises:
-    Logger.notice("Starting simulation of " + str(snake_count) + " snakes...")
     var pygame = Python.import_module("pygame")
-    var screen = pygame.display.set_mode((game_width * game_scale, game_height * game_scale))
-    var population = Population[snake_count]()
+    var input = Python.import_module("builtins").input
     
+    var population = Population[snake_count]()
+    Logger.cls()
+    try:
+        population.load()
+    except:
+        Logger.warn("No serialized data found. Starting new population.")
+
     var run = True
     while run:
         var count = 0
-        population.active = True
-        while count < 100 and run and population.active:
+        while count < timeout and population.active and run:
             var events = pygame.event.get()
             for event in events:
                 if event.type == pygame.QUIT:
                     run = False
 
-            population.update_habitat(screen)
-            
+            population.update_habitat()
             count += 1
-            
-        Logger.notice("Generation has died. Generating next habitat...")
         population.generate_next_habitat(survival_rate=0.5)
+
+    while True:
+        var save_population = input("Save population data?(Y/n)")
+        if save_population.lower()[0] == "n":
+            return
+        elif save_population.lower()[0] == "y":
+            break
+
+    try:
+        population.save()
+    except:
+        Logger.error("Population save unsuccessful. FeelsBadMan.")
