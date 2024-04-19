@@ -86,7 +86,6 @@ struct Population[snake_count: Int]:
     fn generate_next_habitat(inout self, survival_rate: Float32) raises:
         Logger.notice("Generating new habitat.")
         self.active = True
-        #var new_habitat: List[Snake] = List[Snake]()
         var snake_fitnesses: List[Float32] = List[Float32]()
 
 
@@ -100,56 +99,45 @@ struct Population[snake_count: Int]:
         var k = floor(snake_count - (snake_count * survival_rate)).to_int() # Reverse list index
         var survival_threshold = snake_fitnesses[k] # Top k snakes live to next habitat
         var parent_threshold = snake_fitnesses[-2] # Top two become parents
-        var parent_a: Optional[Int] = Optional[Int](None)
-        var parent_b: Optional[Int] = Optional[Int](None)
-        #var child: Optional[Snake] = Optional[Snake](None)
+        var parent_indices = List[Int]()
+        var survived_indices = List[Int]()
+        var child_indices = List[Int]()
 
         if len(self.food_array) > 1:
             self.food_array = List(self.food_array[-1])
 
-        '''var indices = Pointer[Int].alloc(snake_count)
-        for i in range(snake_count):
-            indices[i] = i
-
-        @parameter
-        fn cmp_snake[type: AnyRegType](a: Int, b: Int) -> Bool:
-            return True
-
-        partition[Int, cmp_snake](snake_count * survival_rate, snake_count)'''
-
-
-
-        for index in range(0, snake_count, 2):
-            self.habitat[index] = Snake(self.habitat[index].neural_network)
-            self.habitat[index+1] = Snake(self.habitat[index+1].neural_network)
-            self.habitat[index].neural_network.average(self.habitat[index+1].neural_network)
-            self.habitat[index+1].neural_network.average(self.habitat[index].neural_network)
-            self.habitat[index].neural_network.mutate(0.5)
-            self.habitat[index+1].neural_network.mutate(0.5)
-        '''for index in range(0, snake_count):
-            self.habitat[index] = Snake(nn_data=self.habitat[index].neural_network)
-            
-            if self.habitat[index].fitness() >= parent_threshold and not parent_a:
-                parent_a = index
-                new_habitat.append(Snake(nn_data=self.habitat[index].neural_network, id=len(new_habitat)))
-            elif self.habitat[index].fitness() >= parent_threshold and not parent_b:
-                parent_b = index
-                new_habitat.append(Snake(nn_data=self.habitat[index].neural_network, id=len(new_habitat)))
-            elif self.habitat[index].fitness() >= parent_threshold:
-                new_habitat.append(Snake(nn_data=self.habitat[index].neural_network, id=len(new_habitat)))
-                child = Snake.generate_offspring(self.habitat[parent_a.value()], self.habitat[parent_b.value()])
+        for index in range(snake_count):
+            if self.habitat[index].fitness() >= parent_threshold and len(parent_indices) < 2:
+                parent_indices.append(index)
             elif self.habitat[index].fitness() >= survival_threshold:
-                new_habitat.append(Snake(nn_data=self.habitat[index].neural_network, id=len(new_habitat)))
+                survived_indices.append(index)
             else:
-                continue
-        
-        for index in range(0, snake_count):
-            if self.habitat[index].fitness() < survival_threshold and child:
-                var current_child_value = child.value()
-                var mutated_child = current_child_value.neural_network.mutate(12)
-                new_habitat.append(Snake(nn_data=mutated_child, id=len(new_habitat)))
+                child_indices.append(index)
+            
+        for survived_index in survived_indices:
+            self.habitat[survived_index[]].neural_network.mutate(1.5)
+            self.habitat[survived_index[]].reset()
 
-        self.habitat = new_habitat'''
+        var parent_a_copy = NeuralNetwork[dtype](neural_network_spec)
+        parent_a_copy.copy(self.habitat[parent_indices[0]].neural_network)
+        var parent_b_copy = NeuralNetwork[dtype](neural_network_spec)
+        parent_b_copy.copy(self.habitat[parent_indices[1]].neural_network)
+
+        for child_index in range(0, len(child_indices), 2):
+            var child_a_index = child_indices[child_index]
+            var child_b_index = child_indices[child_index+1]
+            parent_a_copy.average(parent_b_copy)
+            parent_b_copy.copy(parent_a_copy)
+            parent_a_copy.mutate(1.5)
+            parent_b_copy.mutate(1.5)
+            self.habitat[child_a_index].neural_network.copy(parent_a_copy)
+            self.habitat[child_b_index].neural_network.copy(parent_b_copy)
+            self.habitat[child_a_index].reset()
+            self.habitat[child_b_index].reset()
+
+
+
+        
             
     fn draw_food(self, screen: PythonObject) raises:
         var pygame = Python.import_module("pygame")

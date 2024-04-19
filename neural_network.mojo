@@ -95,6 +95,14 @@ struct NeuralNetwork[dtype: DType](Hashable):
             output_array = torch.special.expit(torch.mm(self.data[2*i], output_array) + self.data[2*i+1])
         return output_array
 
+    fn copy(inout self, existing: Self) raises:
+        for i in range(len(self.data_spec)):
+            if self.data_spec[i] != existing.data_spec[i]:
+                raise("Doesn't match existing data specification")
+            
+        for i in range(len(self.data_spec)):
+            self.data[i] = existing.data[i]
+
     fn mutate(inout self, strength: Float32) raises:
         var torch = Python.import_module("torch")
         for i in range(len(self.data_spec)):

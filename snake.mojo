@@ -56,6 +56,15 @@ struct Snake(Hashable):
         result += "]"
         return result
 
+    fn reset(inout self):
+        self.position = SIMD[dtype, 2](0, 0)
+        self.direction = SIMD[dtype, 2](-1, 0)
+        self.score = starting_score
+        self.min_dist = game_width * game_height
+        self.history = List[SIMD[dtype, 2]]()
+        for i in range(self.score):
+            self.history.append(self.position + SIMD[dtype, 2](self.score - i - 1, 0))
+
     fn update(inout self, fruit_position: SIMD[dtype, 2], borrowed food_array_length: Int, inout screen: PythonObject) raises:
         var torch = Python.import_module("torch")
         var dist_left = abs(-game_width_offset - self.position[0])
