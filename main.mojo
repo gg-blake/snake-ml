@@ -10,12 +10,13 @@ fn main() raises:
     var pygame = Python.import_module("pygame")
     var input = Python.import_module("builtins").input
     
+    var logger = Logger("logs")
     var population = Population[snake_count]()
     Logger.cls()
     try:
-        population.load()
+        population.load(logger)
     except:
-        Logger.warn("No serialized data found. Starting new population.")
+        logger.warn("No serialized data found. Starting new population.")
 
     var run = True
     while run:
@@ -27,7 +28,7 @@ fn main() raises:
 
             population.update_habitat()
         
-        population.generate_next_habitat(survival_rate=0.05)
+        population.generate_next_habitat(survival_rate=0.05, logger=logger)
 
     while True:
         var save_population = input("Save population data?(Y/n)")
@@ -37,6 +38,6 @@ fn main() raises:
             break
 
     try:
-        population.save()
+        population.save(logger)
     except:
-        Logger.error("Population save unsuccessful. FeelsBadMan.")
+        logger.error("Population save unsuccessful. FeelsBadMan.")

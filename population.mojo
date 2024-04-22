@@ -128,7 +128,7 @@ struct Population[snake_count: Int]:
         self.active = True
 
 
-    fn generate_next_habitat(inout self, survival_rate: Float32) raises:
+    fn generate_next_habitat(inout self, survival_rate: Float32, inout logger: Logger) raises:
         var snake_fitnesses: List[Float32] = List[Float32]()
 
 
@@ -174,6 +174,7 @@ struct Population[snake_count: Int]:
 
         
         self.log_stats(
+            logger=logger,
             generation=self.stats["generation"] + 1,
             max=parent_threshold, 
             average=Self.average(snake_fitnesses),
@@ -199,7 +200,7 @@ struct Population[snake_count: Int]:
             return lst[(len(lst) - 1) // 2]
 
     
-    fn log_stats(inout self, **kwargs: Float32) raises:
+    fn log_stats(inout self, inout logger: Logger, **kwargs: Float32) raises:
         var previous_stats = self.stats
         for key in kwargs.keys():
             var current_key = key[]
@@ -210,9 +211,9 @@ struct Population[snake_count: Int]:
         for key in self.stats.keys():
             var stat = key[]
             if self.stats[stat] > previous_stats[stat]:
-                Logger.status(str(stat) + ": " + str(self.stats[stat]) + " (+)")
+                logger.status(str(stat) + ": " + str(self.stats[stat]) + " (+)")
             else:
-                Logger.status(str(stat) + ": " + str(self.stats[stat]) + " (-)")
+                logger.status(str(stat) + ": " + str(self.stats[stat]) + " (-)")
         
 
     @staticmethod
@@ -231,30 +232,31 @@ struct Population[snake_count: Int]:
             # Draws visual representation of this Food object to the running pygame window
             pygame.draw.rect(screen, (0, 200, 0), (int(food_x) * game_scale, int(food_y) * game_scale, game_scale, game_scale))
 
-    fn save(inout self) raises:
+    fn save(inout self, inout logger: Logger) raises:
         for habitat_index in range(snake_count):
             self.habitat[habitat_index].neural_network.save(habitat_index)
 
         var filename_prefix = "data/" + str(self.habitat[0].neural_network.__repr__())
-        Logger.notice("Population data serialized as " + filename_prefix + "-#-#")
+        logger.notice("Population data serialized as " + filename_prefix + "-#-#")
 
-    fn load(inout self) raises:
+    fn load(inout self, inout logger: Logger) raises:
         for habitat_index in range(snake_count):
             self.habitat[habitat_index].neural_network.load(habitat_index)
 
         var filename_prefix = "data/" + str(self.habitat[0].neural_network.__repr__())
-        Logger.notice("Population data deserialized from " + filename_prefix + "-#-#")
+        logger.notice("Population data deserialized from " + filename_prefix + "-#-#")
         
 fn main() raises:
     var pygame = Python.import_module("pygame")
     var input = Python.import_module("builtins").input
     
+    var logger = Logger("logs")
     var population = Population[snake_count]()
     Logger.cls()
     try:
-        population.load()
+        population.load(logger)
     except:
-        Logger.warn("No serialized data found. Starting new population.")
+        logger.warn("No serialized data found. Starting new population.")
 
     var run = True
     while run:
@@ -266,7 +268,7 @@ fn main() raises:
 
             population.update_habitat()
         
-        population.generate_next_habitat(survival_rate=0.05)
+        population.generate_next_habitat(survival_rate=0.05, logger=logger)
 
     while True:
         var save_population = input("Save population data?(Y/n)")
@@ -276,6 +278,6 @@ fn main() raises:
             break
 
     try:
-        population.save()
+        population.save(logger)
     except:
-        Logger.error("Population save unsuccessful. FeelsBadMan.")
+        logger.error("Population save unsuccessful. FeelsBadMan.")
