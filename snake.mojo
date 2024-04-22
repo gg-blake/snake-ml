@@ -1,8 +1,10 @@
 from python import Python
-from population import dtype, neural_network_spec, game_width, game_width_offset, game_height, game_height_offset, starting_score, game_scale
+from population import dtype, neural_network_spec, game_width, game_width_offset, game_height, game_height_offset, starting_score, game_scale, ttl
 from neural_network import NeuralNetwork
 from math import abs, sqrt
 from tensor import Tensor, TensorSpec
+from logger import Logger
+
 
 struct Snake(Hashable):
     var position: SIMD[dtype, 2]
@@ -11,14 +13,16 @@ struct Snake(Hashable):
     var min_dist: SIMD[dtype, 1]
     var neural_network: NeuralNetwork[dtype]
     var history: List[SIMD[dtype, 2]]
+    var fitness: Int
 
     fn __init__(inout self) raises:
         self.position = SIMD[dtype, 2](0, 0)
         self.direction = SIMD[dtype, 2](-1, 0)
         self.neural_network = NeuralNetwork[dtype](spec=neural_network_spec)
         self.score = starting_score
-        self.min_dist = game_width * game_height
+        self.min_dist = 0
         self.history = List[SIMD[dtype, 2]]()
+        self.fitness = ttl
         for i in range(self.score):
             self.history.append(self.position + SIMD[dtype, 2](self.score - i - 1, 0))
 
@@ -28,8 +32,9 @@ struct Snake(Hashable):
         self.direction = SIMD[dtype, 2](-1, 0)
         self.neural_network = neural_network
         self.score = starting_score
-        self.min_dist = game_width * game_height
+        self.min_dist = 0
         self.history = List[SIMD[dtype, 2]]()
+        self.fitness = ttl
         for i in range(self.score):
             self.history.append(self.position + SIMD[dtype, 2](self.score - i - 1, 0))
         
@@ -56,46 +61,64 @@ struct Snake(Hashable):
         result += "]"
         return result
 
+    fn __del__(owned self):
+        self.neural_network^.__del__()
+
     fn reset(inout self):
         self.position = SIMD[dtype, 2](0, 0)
         self.direction = SIMD[dtype, 2](-1, 0)
         self.score = starting_score
-        self.min_dist = game_width * game_height
+        self.min_dist = 0
         self.history = List[SIMD[dtype, 2]]()
+        self.fitness = ttl
         for i in range(self.score):
             self.history.append(self.position + SIMD[dtype, 2](self.score - i - 1, 0))
 
-    fn update(inout self, fruit_position: SIMD[dtype, 2], borrowed food_array_length: Int, inout screen: PythonObject) raises:
-        var torch = Python.import_module("torch")
-        var dist_left = abs(-game_width_offset - self.position[0])
-        var dist_right = abs(game_width_offset - self.position[0])
-        var dist_top = abs(-game_height_offset - self.position[1])
-        var dist_bottom = abs(game_height_offset - self.position[1])
-        var dist_top_left = sqrt(dist_top**2 + dist_left**2)
-        var dist_top_right = sqrt(dist_top**2 + dist_right**2)
-        var dist_bottom_left = sqrt(dist_bottom**2 + dist_left**2)
-        var dist_bottom_right = sqrt(dist_bottom**2 + dist_right**2)
-        var fruit_left = (fruit_position < self.position)[0]
-        var fruit_right = (fruit_position > self.position)[0]
-        var fruit_top = (fruit_position < self.position)[1]
-        var fruit_bottom = (fruit_position > self.position)[1]
+    fn is_dead(self) -> Bool:
+        return self.direction[0].to_int() == 0 and self.direction[1].to_int() == 0
 
-        var fruit_left_strict = SIMD[DType.bool, 1](fruit_left and not (fruit_top or fruit_bottom)).to_int()
-        var fruit_right_strict = SIMD[DType.bool, 1](fruit_right and not (fruit_top or fruit_bottom)).to_int()
-        var fruit_top_strict = SIMD[DType.bool, 1](fruit_top and not (fruit_left or fruit_right)).to_int()
-        var fruit_bottom_strict = SIMD[DType.bool, 1](fruit_bottom and not (fruit_left or fruit_right)).to_int()
+    fn update(inout self, fruit_position: SIMD[dtype, 2], borrowed food_array_length: Int, inout screen: PythonObject, inout font: PythonObject) raises:
+        if self.is_dead():
+            return
+
+        var torch = Python.import_module("torch")
+
+        var fruit_left = (fruit_position < self.position)[0].to_int()
+        var fruit_right = (fruit_position > self.position)[0].to_int()
+        var fruit_top = (fruit_position < self.position)[1].to_int()
+        var fruit_bottom = (fruit_position > self.position)[1].to_int()
+        
+        var wall_left = Snake.in_bounds(self.position + SIMD[dtype, 2](-1, 0)).to_int()
+        var wall_right = Snake.in_bounds(self.position + SIMD[dtype, 2](1, 0)).to_int()
+        var wall_top = Snake.in_bounds(self.position + SIMD[dtype, 2](0, -1)).to_int()
+        var wall_bottom = Snake.in_bounds(self.position + SIMD[dtype, 2](0, 1)).to_int()
+
         var body_left = (self.position + SIMD[dtype, 2](-1, 0) in self).to_int()
         var body_right = (self.position + SIMD[dtype, 2](1, 0) in self).to_int()
         var body_top = (self.position + SIMD[dtype, 2](0, -1) in self).to_int()
         var body_bottom = (self.position + SIMD[dtype, 2](0, 1) in self).to_int()
 
+        var facing_left = (self.direction[0] == -1).to_int()
+        var facing_right = (self.direction[0] == 1).to_int()
+        var facing_top = (self.direction[1] == -1).to_int()
+        var facing_bottom = (self.direction[1] == 1).to_int()
+
+        var fruit_ahead = (fruit_left and facing_left) or (fruit_right and facing_right) or (fruit_top and facing_top) or (fruit_bottom and facing_bottom)
+        var fruit_left_side = (fruit_left and facing_top) or (fruit_right and facing_bottom) or (fruit_top and facing_right) or (fruit_bottom and facing_left)
+        var fruit_right_side = (fruit_left and facing_bottom) or (fruit_right and facing_top) or (fruit_top and facing_left) or (fruit_bottom and facing_right)
+        var fruit_behind = (not fruit_ahead) and (not fruit_left) and (not fruit_right)
+        var wall_ahead = (wall_left and facing_left) or (wall_right and facing_right) or (wall_top and facing_top) or (wall_bottom and facing_bottom)
+        var wall_left_side = (wall_left and facing_top) or (wall_right and facing_bottom) or (wall_top and facing_right) or (wall_bottom and facing_left)
+        var wall_right_side = (wall_left and facing_bottom) or (wall_right and facing_top) or (wall_top and facing_left) or (wall_bottom and facing_right)
+        var body_ahead = (body_left and facing_left) or (body_right and facing_right) or (body_top and facing_top) or (body_bottom and facing_bottom)
+        var body_left_side = (body_left and facing_top) or (body_right and facing_bottom) or (body_top and facing_right) or (body_bottom and facing_left)
+        var body_right_side = (body_left and facing_bottom) or (body_right and facing_top) or (body_top and facing_left) or (body_bottom and facing_right)
+
+
         var input = torch.tensor([
-            dist_left.to_int(), dist_right.to_int(), dist_top.to_int(), dist_bottom.to_int(),
-            dist_top_left.to_int(), dist_top_right.to_int(), dist_bottom_left.to_int(), dist_bottom_right.to_int(),
-            fruit_left_strict, fruit_right_strict, fruit_top_strict, fruit_bottom_strict,
-            (fruit_left and fruit_top).to_int(), (fruit_right and fruit_top).to_int(),
-            (fruit_left and fruit_bottom).to_int(), (fruit_right and fruit_bottom).to_int(),
-            body_left, body_right, body_top, body_bottom
+            body_ahead, body_left_side, body_right_side,
+            fruit_ahead, fruit_left_side, fruit_right_side, fruit_behind,
+            wall_ahead, wall_left_side, wall_right_side
         ]).to(torch.float32).unsqueeze(1)
 
         
@@ -139,35 +162,51 @@ struct Snake(Hashable):
 
         
         self.move(fruit_position)
-        self.draw(food_array_length, screen)
+        self.draw(food_array_length, screen, font)
         #print(self.position)
 
-    fn in_bounds(self) -> Bool:
-        return abs(self.position[0]) <= game_width_offset and abs(self.position[1]) <= game_height_offset
+    @staticmethod
+    fn in_bounds(position: SIMD[dtype, 2]) -> SIMD[DType.bool, 1]:
+        return abs(position[0]) < game_width_offset and abs(position[1]) < game_height_offset
 
     fn distance(self, point: SIMD[dtype, 2]) -> SIMD[dtype, 1]:
         return sqrt((self.position[0] - point[0])**2 + (self.position[1] - point[1])**2)
 
     fn move(inout self, fruit_position: SIMD[dtype, 2]):
-        if self.position + self.direction in self or not self.in_bounds():
+        # Death detection
+        if self.position + self.direction in self or not Snake.in_bounds(self.position):
+            # Active death: If the snake hits the game bounds or tail
             self.direction = SIMD[dtype, 2].splat(0)
             return
-        
+        elif self.fitness <= (self.score - starting_score) * ttl:
+            # Passive death: If the snake moves too much without eating food
+            self.direction = SIMD[dtype, 2].splat(0)
+            return
+
+            
+
+        # Food detection
         if self.position + self.direction == fruit_position:
             self.score += 1
-            self.min_dist = game_width * game_height
+            self.fitness += ttl
         else:
             var current_distance = self.distance(fruit_position)
             if current_distance < self.min_dist:
+                self.fitness += 1
                 self.min_dist = current_distance
+            else:
+                self.fitness -= 2
 
         self.position += self.direction
-        self.history = self.history[1:]
+        self.fitness += 1
+        
         self.history.append(self.position)
+        while len(self.history) > self.score:
+            self.history = self.history[1:]
         
 
 
-    fn fitness(self) -> SIMD[dtype, 1]:
+    fn get_fitness(self) -> SIMD[dtype, 1]:
         return ((400 / (self.min_dist) + (self.score**2 * 20)))
 
     fn generate_offspring(inout parent_a: Snake, inout parent_b: Snake) raises:
@@ -175,53 +214,28 @@ struct Snake(Hashable):
         parent_b.neural_network.average(parent_b.neural_network)
 
     # Draws visual representation of this Snake object to the running pygame window
-    fn draw(borrowed self, current_food_count: Int, screen: PythonObject):
-        var pygame = Python.none()
-        try:
-            pygame = Python.import_module("pygame")
-        except Error:
-            print(Error)
+    fn draw(borrowed self, current_food_count: Int, screen: PythonObject, font: PythonObject) raises:
+        var pygame = Python.import_module("pygame")
+        var freetype = pygame.freetype
         # Snakes that have eaten the most food off their generation are the brightest
         var true_score = self.score - starting_score
         var main_weight = int((true_score + 1) / current_food_count * 255)
         
         # Draw the body
         var count = 0
+        pygame.font.init()
         
-        
-
-        
-
-        for ref in self.history:
-            var key = ref.get_unsafe_pointer()[]
-            
-            
-            try:
-                
-                
-                # Points in the body get darker the closer they are to the end
-                var tail_weight = int(count / len(self.history) * 32 + int((true_score + 1) / current_food_count * 128))
-                # Draw rect to screen
-                if self.score - starting_score + 1 >= current_food_count:
-                    pygame.draw.rect(screen, (200, 30, 30), ((key[0].to_int() + game_width_offset) * game_scale, (key[1].to_int() + game_height_offset) * game_scale, game_scale, game_scale))
-                else:
-                    pygame.draw.rect(screen, (200, 0, 0), (key[0].to_int() + game_width_offset) * game_scale, (key[1].to_int() + game_height_offset) * game_scale, game_scale, game_scale)
-                
-            except ValueError:
-                pass
-
-            count += 1
-            
-            
-        # Draw the head of the snake
-        try:
-            if true_score + 1 >= current_food_count:
-                pygame.draw.rect(screen, (120, 255, 120), ((self.position[0].to_int() + game_width_offset) * game_scale, (self.position[1].to_int() + game_height_offset) * game_scale, game_scale, game_scale))
-            else:
-                pass
-                pygame.draw.rect(screen, (60, 60, 60), ((self.position[0].to_int() + game_width_offset) * game_scale, (self.position[1].to_int() + game_height_offset) * game_scale, game_scale, game_scale))
-        except ValueError:
-            pass
+        var color = (200, 30, 30)
+        for b in self.history:
+            var body_part = b[]
+            var x_position = body_part[0].to_int() + game_width_offset
+            var y_position = body_part[1].to_int() + game_width_offset
+            var rect = (x_position * game_scale, y_position * game_scale, game_scale, game_scale)
+            if body_part[0] == self.position[0] and body_part[1] == self.position[1]:
+                color = (150, 40, 40)
+            elif true_score + 1 >= current_food_count:
+                color = (255, 255, 255)
+            pygame.draw.rect(screen, color, rect)
 
 
 
