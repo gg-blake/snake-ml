@@ -9,35 +9,48 @@ from math import sqrt, abs, floor
 from tensor import Tensor
 from collections.vector import InlinedFixedVector
 from logger import Logger
+from time import sleep
 
 alias dtype = DType.float32
-alias neural_network_spec = List[Int](20, 35, 27, 10, 4)
+alias neural_network_spec = List[Int](10, 10, 10, 4)
 alias game_width: Int = 40
 alias game_width_offset: Int = game_width // 2
 alias game_height: Int = 40
 alias game_height_offset: Int = game_height // 2
 alias starting_score: Int = 5
-alias game_scale: Int = 13
+alias game_scale: Int = 26
+alias ttl: Int = 100
+alias snake_count: Int = 100
+alias timeout: Int = 200 # Number of snakes steps before population is automatically updated
 
 struct Population[snake_count: Int]:
     var habitat: AnyPointer[Snake]
     var food_array: List[SIMD[dtype, 2]]
     var active: Bool
-    var generation: Int
+    var stats: Dict[String, Float32]
     var screen: PythonObject
+    var font: PythonObject
 
     fn __init__(inout self) raises:
         var pygame = Python.import_module("pygame")
         pygame.init()
+        pygame.font.init()
         pygame.display.set_caption("Snake AI")
-        self.screen = pygame.display.set_mode((game_width * game_scale, game_height * game_scale))
+        
+        
         self.habitat = AnyPointer[Snake].alloc(snake_count)
         for id in range(snake_count):
             self.habitat[id] = Snake()
         
         self.food_array = List[SIMD[dtype, 2]]()
         self.active = True
-        self.generation = 0
+        self.screen = pygame.display.set_mode((game_width * game_scale, game_height * game_scale))
+        self.font = pygame.font.SysFont('Comic Sans MS', 10)
+        self.stats = Dict[String, Float32]()
+        self.stats["generation"] = 0
+        self.stats["max"] = 0
+        self.stats["average"] = 0
+        self.stats["median"] = 0
         self.generate_food()
 
     fn __getitem__(inout self, idx: Int) raises -> NeuralNetwork[dtype]:
@@ -55,16 +68,17 @@ struct Population[snake_count: Int]:
     fn __getitem__(inout self, idx: Int, idx_layer: Int, idx_row: Int, idx_col: Int) raises -> SIMD[dtype, 1]:
         return self.habitat[idx].neural_network[idx_layer, idx_row, idx_col]
 
+    fn __del__(owned self):
+        self.habitat.free()
+
     fn generate_food(inout self) raises:
         var pyrandom = Python.import_module("random")
         var collections = Python.import_module("collections")
-        var rand_x = pyrandom.randint(-game_width_offset, game_width_offset).to_float64().to_int()
-        var rand_y = pyrandom.randint(-game_height_offset, game_height_offset).to_float64().to_int()
+        var rand_x = pyrandom.randint(-game_width_offset, game_width_offset-1).to_float64().to_int()
+        var rand_y = pyrandom.randint(-game_height_offset, game_height_offset-1).to_float64().to_int()
         self.food_array.append(SIMD[dtype, 2](rand_x, rand_y))
 
     fn update_habitat(inout self) raises:
-        Logger.cls()
-        Logger.status("Updating habitat.")
         var pygame = Python.import_module("pygame")
 
         self.screen.fill((0, 0, 0))
@@ -75,80 +89,143 @@ struct Population[snake_count: Int]:
                 self.generate_food()
             
             var current_snake_fruit = self.food_array[self.habitat[index].score - starting_score]
-            self.habitat[index].update(current_snake_fruit, len(self.food_array), self.screen)
+            self.habitat[index].update(current_snake_fruit, len(self.food_array), self.screen, self.font)
         
             if self.habitat[index].direction[0] != 0 or self.habitat[index].direction[1] != 0:
                 self.active = True
             
-        self.draw_food(self.screen)
+        self.draw_food(self.food_array, self.screen)
+        '''var game_font = pygame.font.SysFont('Comic Sans MS', 10)
+        var text_surface = game_font.render("Hello World!", False, (255, 255, 255))
+        self.screen.blit(text_surface, (40, 40))'''
         pygame.display.update()
 
-    fn generate_next_habitat(inout self, survival_rate: Float32) raises:
-        Logger.notice("Generating new habitat.")
-        self.active = True
-        var snake_fitnesses: List[Float32] = List[Float32]()
+    fn replay(inout self, snake: Snake) raises:
+        var pygame = Python.import_module("pygame")
+        var test_neural_network = NeuralNetwork[dtype](neural_network_spec)
+        test_neural_network.copy(snake.neural_network)
+        var test_snake = Snake(neural_network=test_neural_network)
+        var active_food = self.food_array[0]
+        var clock = pygame.time.Clock()
+        while not test_snake.is_dead():
 
 
-        for index in range(0, snake_count):
-            snake_fitnesses.append(self.habitat[index].fitness())
+            self.screen.fill((0, 0, 0))
+            var net_score = test_snake.score - starting_score
+            test_snake.update(self.food_array[net_score], net_score + 1, self.screen, self.font)
+            Self.draw_food(self.food_array[0:net_score + 1], self.screen)
+            pygame.display.update()
+            clock.tick(1000)
+            
 
-        sort(snake_fitnesses) # Sort in ascending order (low to high)
-
-
-
-        var k = floor(snake_count - (snake_count * survival_rate)).to_int() # Reverse list index
-        var survival_threshold = snake_fitnesses[k] # Top k snakes live to next habitat
-        var parent_threshold = snake_fitnesses[-2] # Top two become parents
-        var parent_indices = List[Int]()
-        var survived_indices = List[Int]()
-        var child_indices = List[Int]()
+    fn reset_habitat(inout self):
+        for i in range(snake_count):
+            self.habitat[i].reset()
 
         if len(self.food_array) > 1:
             self.food_array = List(self.food_array[-1])
 
+        self.active = True
+
+
+    fn generate_next_habitat(inout self, survival_rate: Float32) raises:
+        var snake_fitnesses: List[Float32] = List[Float32]()
+
+
+        for index in range(0, snake_count):
+            snake_fitnesses.append(self.habitat[index].fitness)
+
+        sort(snake_fitnesses) # Sort in ascending order (low to high)
+
+        var k = floor(snake_count - (snake_count * survival_rate)).to_int() # Reverse list index
+        var survival_threshold = snake_fitnesses[k] # Top k snakes live to next habitat
+        var parent_threshold = snake_fitnesses[-1] # Top two become parents
+        var parent_indices = List[Int]()
+        var survived_indices = List[Int]()
+        var child_indices = List[Int]()
+
+        
+
+        
+
         for index in range(snake_count):
-            if self.habitat[index].fitness() >= parent_threshold and len(parent_indices) < 2:
+            if self.habitat[index].fitness >= parent_threshold.to_int() and len(parent_indices) < 1:
                 parent_indices.append(index)
-            elif self.habitat[index].fitness() >= survival_threshold:
+            elif self.habitat[index].fitness >= survival_threshold.to_int():
                 survived_indices.append(index)
             else:
                 child_indices.append(index)
+
+        #self.replay(self.habitat[parent_indices[0]])
             
         for survived_index in survived_indices:
-            self.habitat[survived_index[]].neural_network.mutate(1.5)
-            self.habitat[survived_index[]].reset()
+            self.habitat[survived_index[]].neural_network.mutate(0.5)
 
-        var parent_a_copy = NeuralNetwork[dtype](neural_network_spec)
-        parent_a_copy.copy(self.habitat[parent_indices[0]].neural_network)
-        var parent_b_copy = NeuralNetwork[dtype](neural_network_spec)
-        parent_b_copy.copy(self.habitat[parent_indices[1]].neural_network)
+        var parent_copy = NeuralNetwork[dtype](neural_network_spec)
+        parent_copy.copy(self.habitat[parent_indices[0]].neural_network)
+        
+        for child_index in child_indices:
+            self.habitat[child_index[]].neural_network.copy(parent_copy)
+            self.habitat[child_index[]].neural_network.mutate(0.1)
 
-        for child_index in range(0, len(child_indices), 2):
-            var child_a_index = child_indices[child_index]
-            var child_b_index = child_indices[child_index+1]
-            parent_a_copy.average(parent_b_copy)
-            parent_b_copy.copy(parent_a_copy)
-            parent_a_copy.mutate(1.5)
-            parent_b_copy.mutate(1.5)
-            self.habitat[child_a_index].neural_network.copy(parent_a_copy)
-            self.habitat[child_b_index].neural_network.copy(parent_b_copy)
-            self.habitat[child_a_index].reset()
-            self.habitat[child_b_index].reset()
-
+        
+        self.reset_habitat()
 
 
         
-            
-    fn draw_food(self, screen: PythonObject) raises:
+        self.log_stats(
+            generation=self.stats["generation"] + 1,
+            max=parent_threshold, 
+            average=Self.average(snake_fitnesses),
+            median=Self.median(snake_fitnesses)
+        )
+
+
+    @staticmethod
+    fn average(lst: List[Float32]) -> Float32:
+        var total: Float32 = 0
+        for i in lst:
+            total += i[]
+
+        return total / len(lst)
+
+    @staticmethod
+    fn median(lst: List[Float32]) -> Float32:
+        if len(lst) % 2 == 0:
+            var median_a = lst[(len(lst) // 2) - 1]
+            var median_b = lst[len(lst) // 2]
+            return (median_a + median_b) / 2
+        else:
+            return lst[(len(lst) - 1) // 2]
+
+    
+    fn log_stats(inout self, **kwargs: Float32) raises:
+        var previous_stats = self.stats
+        for key in kwargs.keys():
+            var current_key = key[]
+            if current_key in self.stats:
+                self.stats[current_key] = kwargs[current_key]
+
+        Logger.cls()
+        for key in self.stats.keys():
+            var stat = key[]
+            if self.stats[stat] > previous_stats[stat]:
+                Logger.status(str(stat) + ": " + str(self.stats[stat]) + " (+)")
+            else:
+                Logger.status(str(stat) + ": " + str(self.stats[stat]) + " (-)")
+        
+
+    @staticmethod
+    fn draw_food(food_array: List[SIMD[dtype, 2]], screen: PythonObject) raises:
         var pygame = Python.import_module("pygame")
-        var last_food_x = self.food_array[-1][0] + game_width_offset
-        var last_food_y = self.food_array[-1][1] + game_height_offset
+        var last_food_x = food_array[-1][0] + game_width_offset
+        var last_food_y = food_array[-1][1] + game_height_offset
         pygame.draw.rect(screen, (0, 100, 0), (last_food_x.to_int() * game_scale, last_food_y.to_int() * game_scale, game_scale, game_scale))
-        if len(self.food_array) <= 1:
+        if len(food_array) <= 1:
             return
 
-        for index in range(0, len(self.food_array) - 1):
-            var food = self.food_array[index]
+        for index in range(0, len(food_array) - 1):
+            var food = food_array[index]
             var food_x = food[0] + game_width_offset
             var food_y = food[1] + game_height_offset
             # Draws visual representation of this Food object to the running pygame window
@@ -168,3 +245,37 @@ struct Population[snake_count: Int]:
         var filename_prefix = "data/" + str(self.habitat[0].neural_network.__repr__())
         Logger.notice("Population data deserialized from " + filename_prefix + "-#-#")
         
+fn main() raises:
+    var pygame = Python.import_module("pygame")
+    var input = Python.import_module("builtins").input
+    
+    var population = Population[snake_count]()
+    Logger.cls()
+    try:
+        population.load()
+    except:
+        Logger.warn("No serialized data found. Starting new population.")
+
+    var run = True
+    while run:
+        while population.active and run:
+            var events = pygame.event.get()
+            for event in events:
+                if event.type == pygame.QUIT:
+                    run = False
+
+            population.update_habitat()
+        
+        population.generate_next_habitat(survival_rate=0.05)
+
+    while True:
+        var save_population = input("Save population data?(Y/n)")
+        if save_population.lower()[0] == "n":
+            return
+        elif save_population.lower()[0] == "y":
+            break
+
+    try:
+        population.save()
+    except:
+        Logger.error("Population save unsuccessful. FeelsBadMan.")
