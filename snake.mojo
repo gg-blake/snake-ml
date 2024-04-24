@@ -77,7 +77,7 @@ struct Snake(Hashable):
     fn is_dead(self) -> Bool:
         return self.direction[0].to_int() == 0 and self.direction[1].to_int() == 0
 
-    fn update(inout self, fruit_position: SIMD[dtype, 2], borrowed food_array_length: Int, inout screen: PythonObject, inout font: PythonObject) raises:
+    fn update(inout self, fruit_position: SIMD[dtype, 2], borrowed food_array_length: Int, inout screen: PythonObject, inout font: PythonObject, stats: Dict[String, Float32]) raises:
         if self.is_dead():
             return
 
@@ -88,10 +88,10 @@ struct Snake(Hashable):
         var fruit_top = (fruit_position < self.position)[1].to_int()
         var fruit_bottom = (fruit_position > self.position)[1].to_int()
         
-        var wall_left = Snake.in_bounds(self.position + SIMD[dtype, 2](-1, 0)).to_int()
-        var wall_right = Snake.in_bounds(self.position + SIMD[dtype, 2](1, 0)).to_int()
-        var wall_top = Snake.in_bounds(self.position + SIMD[dtype, 2](0, -1)).to_int()
-        var wall_bottom = Snake.in_bounds(self.position + SIMD[dtype, 2](0, 1)).to_int()
+        var wall_left = ~Snake.in_bounds(self.position + SIMD[dtype, 2](-1, 0)).to_int()
+        var wall_right = ~Snake.in_bounds(self.position + SIMD[dtype, 2](1, 0)).to_int()
+        var wall_top = ~Snake.in_bounds(self.position + SIMD[dtype, 2](0, -1)).to_int()
+        var wall_bottom = ~Snake.in_bounds(self.position + SIMD[dtype, 2](0, 1)).to_int()
 
         var body_left = (self.position + SIMD[dtype, 2](-1, 0) in self).to_int()
         var body_right = (self.position + SIMD[dtype, 2](1, 0) in self).to_int()
@@ -106,13 +106,14 @@ struct Snake(Hashable):
         var fruit_ahead = (fruit_left and facing_left) or (fruit_right and facing_right) or (fruit_top and facing_top) or (fruit_bottom and facing_bottom)
         var fruit_left_side = (fruit_left and facing_top) or (fruit_right and facing_bottom) or (fruit_top and facing_right) or (fruit_bottom and facing_left)
         var fruit_right_side = (fruit_left and facing_bottom) or (fruit_right and facing_top) or (fruit_top and facing_left) or (fruit_bottom and facing_right)
-        var fruit_behind = (not fruit_ahead) and (not fruit_left) and (not fruit_right)
-        var wall_ahead = (wall_left and facing_left) or (wall_right and facing_right) or (wall_top and facing_top) or (wall_bottom and facing_bottom)
+        var fruit_behind = SIMD[DType.bool, 1]((not fruit_ahead) and (not fruit_left) and (not fruit_right)).to_int()
+        var wall_ahead = Self.in_bounds(self.position + self.direction).to_int()
         var wall_left_side = (wall_left and facing_top) or (wall_right and facing_bottom) or (wall_top and facing_right) or (wall_bottom and facing_left)
         var wall_right_side = (wall_left and facing_bottom) or (wall_right and facing_top) or (wall_top and facing_left) or (wall_bottom and facing_right)
         var body_ahead = (body_left and facing_left) or (body_right and facing_right) or (body_top and facing_top) or (body_bottom and facing_bottom)
         var body_left_side = (body_left and facing_top) or (body_right and facing_bottom) or (body_top and facing_right) or (body_bottom and facing_left)
         var body_right_side = (body_left and facing_bottom) or (body_right and facing_top) or (body_top and facing_left) or (body_bottom and facing_right)
+
 
 
         var input = torch.tensor([
@@ -121,8 +122,6 @@ struct Snake(Hashable):
             wall_ahead, wall_left_side, wall_right_side
         ]).to(torch.float32).unsqueeze(1)
 
-        
-
         var output = self.neural_network.feed(input)
         output = torch.flatten(output)
         var sorted: PythonObject
@@ -130,6 +129,7 @@ struct Snake(Hashable):
         output = torch.sort(output)[1]
         output = output.flip(0)
 
+        var old_direction = self.direction
         for control in output:
             if control == 0:
                 if self.direction == SIMD[dtype, 2](0, 1):
@@ -160,19 +160,23 @@ struct Snake(Hashable):
 
         
 
-        
-        self.move(fruit_position)
-        self.draw(food_array_length, screen, font)
+        var old_fitness = self.fitness
+        self.move(fruit_position, old_direction)
+        self.draw(food_array_length, screen, font, old_fitness)
         #print(self.position)
 
     @staticmethod
     fn in_bounds(position: SIMD[dtype, 2]) -> SIMD[DType.bool, 1]:
-        return abs(position[0]) < game_width_offset and abs(position[1]) < game_height_offset
+        return abs(position[0]) <= game_width_offset and abs(position[1]) <= game_height_offset
 
     fn distance(self, point: SIMD[dtype, 2]) -> SIMD[dtype, 1]:
         return sqrt((self.position[0] - point[0])**2 + (self.position[1] - point[1])**2)
 
-    fn move(inout self, fruit_position: SIMD[dtype, 2]):
+    @staticmethod
+    fn distance(point_a: SIMD[dtype, 2], point_b: SIMD[dtype, 2]) -> SIMD[dtype, 1]:
+        return sqrt((point_a[0] - point_b[0])**2 + (point_a[1] - point_b[1])**2)
+
+    fn move(inout self, fruit_position: SIMD[dtype, 2], old_direction: SIMD[dtype, 2]):
         # Death detection
         if self.position + self.direction in self or not Snake.in_bounds(self.position):
             # Active death: If the snake hits the game bounds or tail
@@ -186,19 +190,19 @@ struct Snake(Hashable):
             
 
         # Food detection
-        if self.position + self.direction == fruit_position:
+        if (self.position + self.direction)[0] == fruit_position[0] and (self.position + self.direction)[1] == fruit_position[1]:
             self.score += 1
-            self.fitness += ttl
+            self.fitness += ttl * 2
         else:
             var current_distance = self.distance(fruit_position)
-            if current_distance < self.min_dist:
+            if current_distance >= Self.distance(self.position + self.direction, fruit_position) and self.direction != old_direction:
                 self.fitness += 1
-                self.min_dist = current_distance
-            else:
+            elif current_distance < Self.distance(self.position + self.direction, fruit_position):
                 self.fitness -= 2
 
+        
+
         self.position += self.direction
-        self.fitness += 1
         
         self.history.append(self.position)
         while len(self.history) > self.score:
@@ -214,7 +218,7 @@ struct Snake(Hashable):
         parent_b.neural_network.average(parent_b.neural_network)
 
     # Draws visual representation of this Snake object to the running pygame window
-    fn draw(borrowed self, current_food_count: Int, screen: PythonObject, font: PythonObject) raises:
+    fn draw(borrowed self, current_food_count: Int, screen: PythonObject, font: PythonObject, old_fitness: Int) raises:
         var pygame = Python.import_module("pygame")
         var freetype = pygame.freetype
         # Snakes that have eaten the most food off their generation are the brightest
@@ -231,11 +235,35 @@ struct Snake(Hashable):
             var x_position = body_part[0].to_int() + game_width_offset
             var y_position = body_part[1].to_int() + game_width_offset
             var rect = (x_position * game_scale, y_position * game_scale, game_scale, game_scale)
-            if body_part[0] == self.position[0] and body_part[1] == self.position[1]:
-                color = (150, 40, 40)
-            elif true_score + 1 >= current_food_count:
-                color = (255, 255, 255)
-            pygame.draw.rect(screen, color, rect)
+            var rect_pointer = (x_position * game_scale, y_position * game_scale, game_scale, game_scale)
+            '''if self.direction == SIMD[dtype, 2](-1, 0):
+                rect_pointer = (x_position * game_scale + , y_position * game_scale, game_scale, game_scale)
+            elif self.direction == SIMD[dtype, 2](1, 0):
+                rect_pointer = (x_position * game_scale, y_position * game_scale, game_scale, game_scale)
+            elif self.direction == SIMD[dtype, 2](0, -1):
+                rect_pointer = (x_position * game_scale, y_position * game_scale, game_scale, game_scale)
+            elif self.direction == SIMD[dtype, 2](0, 1):
+                rect_pointer = (x_position * game_scale, y_position * game_scale, game_scale, game_scale)
+            var rect = (x_position * game_scale, y_position * game_scale, game_scale, game_scale)'''
+            '''var body_part_position = (self.score - 1) - count / (self.score - 1)
+            var body_part_position_normalized = 255 - (255 * body_part_position)
+            var fitness_deviation = self.fitness / (1 + stats["average"])
+            var max_deviation = stats["max"] / (1 + stats["average"])
+            var deviation_delta = max_deviation - fitness_deviation
+            deviation_delta = math.clamp(deviation_delta, 0, max_deviation)
+            var fitness_normalized = 255 - (255 / (1 + deviation_delta))
+            var body_part_color = ((body_part_position_normalized * 0.5).to_int(), fitness_normalized.to_int(), (body_part_position_normalized * 0.5).to_int())'''
+            var body_part_color = (200, 20, 20)
+            if self.fitness >= old_fitness:
+                body_part_color = (20, 200, 20)
+
+            
+            pygame.draw.rect(screen, body_part_color, rect)
+            if count == self.score - 1:
+                var text_surface = font.render(str(self.fitness), False, (255, 255, 255))
+                screen.blit(text_surface, (x_position * game_scale - game_scale, y_position * game_scale))
+                
+            count += 1
 
 
 
