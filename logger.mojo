@@ -33,12 +33,15 @@ struct Logger:
         print(colored("Notice", color="grey", on_color="on_green"), date, message)
         self.file.write("[Notice] " + "["+str(Logger.now())+"] " + message + "\n")
     
-    fn error(inout self, error: Error) raises:
-        var termcolor = Python.import_module("termcolor")
-        var colored = termcolor.colored
-        var date = colored(str(Logger.now()), color="grey", on_color="on_grey")
-        print(colored("Error", color="grey", on_color="on_red"), date, error)
-        self.file.write("[Error] " + "["+str(Logger.now())+"]\nTraceback:\n" + error + "\n")
+    fn error(inout self, error: String):
+        try:
+            var termcolor = Python.import_module("termcolor")
+            var colored = termcolor.colored
+            var date = colored(str(Logger.now()), color="grey", on_color="on_grey")
+            print(colored("Error", color="grey", on_color="on_red"), date, error)
+            self.file.write("[Error] " + "["+str(Logger.now())+"] " + error + "\n")
+        except:
+            pass
 
     
     fn status(inout self, message: String) raises:
@@ -48,12 +51,11 @@ struct Logger:
         print(colored("Status", color="grey", on_color="on_grey"), date, message)
         self.file.write("[Status] " + "["+str(Logger.now())+"] " + message + "\n")
 
-
-    @staticmethod
-    fn cls() raises:
+    fn cls(inout self) raises:
         var subprocess = Python.import_module("subprocess")
         var os = Python.import_module("os")
         var call = subprocess.call('clear' if os.name == 'posix' else 'cls')
+        self.file.write("########Clear Screen########\n")
 
     @staticmethod
     fn now() raises -> PythonObject:
