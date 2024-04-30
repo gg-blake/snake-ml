@@ -20,7 +20,7 @@ alias game_height_offset: Int = game_height // 2
 alias starting_score: Int = 5
 alias game_scale: Int = 26
 alias ttl: Int = 100
-alias snake_count: Int = 50
+alias snake_count: Int = 100
 alias timeout: Int = 200 # Number of snakes steps before population is automatically updated
 
 struct Population[snake_count: Int]:
@@ -184,18 +184,9 @@ struct Population[snake_count: Int]:
 
         parent_traits.copy(self.best_snake.neural_network)
 
-        
-
-        
-
         for survived_index in survived_indices:
             self.habitat[survived_index[]].neural_network.copy(parent_traits)
-            self.habitat[survived_index[]].neural_network.mutate(mutation_rate)
-            '''if self.habitat[survived_index[]].fitness > self.best_snake.fitness:
-                self.habitat[survived_index[]].neural_network.mutate(mutation_rate)
-            else:
-                self.habitat[survived_index[]].neural_network.copy(parent_traits)
-                self.habitat[survived_index[]].neural_network.mutate(mutation_rate)'''
+            self.habitat[survived_index[]].neural_network.mutate(mutation_rate)        
         
         for child_index in child_indices:
             self.habitat[child_index[]].neural_network.copy(parent_traits)
@@ -305,6 +296,6 @@ fn main() raises:
 
             population.update_habitat()
         population.generate_next_habitat(
-            survival_rate=0.1,
-            mutation_rate=0.5
+            survival_rate=0.05,
+            mutation_rate=0.6
         )
