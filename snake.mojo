@@ -114,8 +114,6 @@ struct Snake(Hashable):
         var body_left_side = (body_left and facing_top) or (body_right and facing_bottom) or (body_top and facing_right) or (body_bottom and facing_left)
         var body_right_side = (body_left and facing_bottom) or (body_right and facing_top) or (body_top and facing_left) or (body_bottom and facing_right)
 
-
-
         var input = torch.tensor([
             body_ahead, body_left_side, body_right_side,
             fruit_ahead, fruit_left_side, fruit_right_side, fruit_behind,
@@ -126,48 +124,51 @@ struct Snake(Hashable):
         output = torch.flatten(output)
         var sorted: PythonObject
         var indices: PythonObject
-        output = torch.sort(output)[1]
-        output = output.flip(0)
+        output = torch.argmax(output)
 
-        var old_direction = self.direction
-        for control in output:
-            if control == 0:
-                if self.direction == SIMD[dtype, 2](0, 1):
-                    continue
-                # Left
-                self.direction = SIMD[dtype, 2](0, -1)
-                break
-            elif control == 1:
-                if self.direction == SIMD[dtype, 2](0, -1):
-                    continue
-                # Right
-                self.direction = SIMD[dtype, 2](0, 1)
-                break
-            elif control == 2:
-                if self.direction == SIMD[dtype, 2](-1, 0):
-                    continue
-                # Up
-                self.direction = SIMD[dtype, 2](1, 0)
-                break
-            elif control == 3:
-                if self.direction == SIMD[dtype, 2](1, 0):
-                    continue
-                # Down
-                self.direction = SIMD[dtype, 2](-1, 0)
-                break
+        var direction_num = 0
+        if SIMD[dtype, 2](0, -1) == self.direction:
+            direction_num = 0
+        elif SIMD[dtype, 2](1, 0) == self.direction:
+            direction_num = 1
+        elif SIMD[dtype, 2](0, 1) == self.direction:
+            direction_num = 2
+        elif SIMD[dtype, 2](-1, 0) == self.direction:
+            direction_num = 3
 
-        #print(self.position, self.direction, self.position + self.direction)
-
+        if output == 0:
+            # left turn
+            direction_num += 1
+        elif output == 1:
+            # right turn
+            direction_num -= 1
         
+        if direction_num < 0:
+            direction_num = 3
+        elif direction_num > 3:
+            direction_num = 0
+
+        if direction_num == 0:
+            # up
+            self.direction = SIMD[dtype, 2](0, -1)
+        elif direction_num == 1:
+            # right
+            self.direction = SIMD[dtype, 2](1, 0)
+        elif direction_num == 2:
+            # down
+            self.direction = SIMD[dtype, 2](0, 1)
+        elif direction_num == 3:
+            # left
+            self.direction = SIMD[dtype, 2](-1, 0)
 
         var old_fitness = self.fitness
-        self.move(fruit_position, old_direction)
+        self.move(fruit_position)
         self.draw(food_array_length, screen, font, old_fitness)
         #print(self.position)
 
     @staticmethod
     fn in_bounds(position: SIMD[dtype, 2]) -> SIMD[DType.bool, 1]:
-        return abs(position[0]) <= game_width_offset and abs(position[1]) <= game_height_offset
+        return position[0] >= -game_width_offset and position[0] < game_width_offset  and position[1] >= -game_height_offset and position[1] < game_height_offset 
 
     fn distance(self, point: SIMD[dtype, 2]) -> SIMD[dtype, 1]:
         return sqrt((self.position[0] - point[0])**2 + (self.position[1] - point[1])**2)
@@ -176,7 +177,7 @@ struct Snake(Hashable):
     fn distance(point_a: SIMD[dtype, 2], point_b: SIMD[dtype, 2]) -> SIMD[dtype, 1]:
         return sqrt((point_a[0] - point_b[0])**2 + (point_a[1] - point_b[1])**2)
 
-    fn move(inout self, fruit_position: SIMD[dtype, 2], old_direction: SIMD[dtype, 2]):
+    fn move(inout self, fruit_position: SIMD[dtype, 2]):
         # Death detection
         if self.position + self.direction in self or not Snake.in_bounds(self.position):
             # Active death: If the snake hits the game bounds or tail
@@ -192,13 +193,14 @@ struct Snake(Hashable):
         # Food detection
         if (self.position + self.direction)[0] == fruit_position[0] and (self.position + self.direction)[1] == fruit_position[1]:
             self.score += 1
-            self.fitness += ttl * 2
+            self.fitness = (self.score - starting_score + 1) * ttl - (ttl // 2)
         else:
             var current_distance = self.distance(fruit_position)
-            if current_distance >= Self.distance(self.position + self.direction, fruit_position) and self.direction != old_direction:
+            var next_distance = Self.distance(self.position + self.direction, fruit_position)
+            if next_distance < current_distance:
                 self.fitness += 1
-            elif current_distance < Self.distance(self.position + self.direction, fruit_position):
-                self.fitness -= 2
+            else:
+                self.fitness -= 5
 
         
 
@@ -207,11 +209,6 @@ struct Snake(Hashable):
         self.history.append(self.position)
         while len(self.history) > self.score:
             self.history = self.history[1:]
-        
-
-
-    fn get_fitness(self) -> SIMD[dtype, 1]:
-        return ((400 / (self.min_dist) + (self.score**2 * 20)))
 
     fn generate_offspring(inout parent_a: Snake, inout parent_b: Snake) raises:
         parent_a.neural_network.average(parent_b.neural_network)
