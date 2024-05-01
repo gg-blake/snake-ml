@@ -26,6 +26,7 @@ alias timeout: Int = 200 # Number of snakes steps before population is automatic
 alias Vector2D = SIMD[dtype, 2]
 alias VectorComponent = SIMD[dtype, 1]
 alias PopulationStats = Dict[String, Scalar[dtype]]
+alias RGB = Tuple[Int, Int, Int]
 
 struct Population[snake_count: Int, mutation_rate: Float32]:
     var habitat: AnyPointer[Snake]
@@ -110,7 +111,7 @@ struct Population[snake_count: Int, mutation_rate: Float32]:
             if not self.habitat[index].is_dead():
                 self.active = True
             
-        self.draw_food(self.food_array, self.screen)
+        self.draw_all_food(self.food_array, self.screen)
         pygame.display.update()
 
     fn generate_next_habitat(inout self) raises:
@@ -149,7 +150,7 @@ struct Population[snake_count: Int, mutation_rate: Float32]:
             self.screen.fill((0, 0, 0))
             var net_score = test_snake.score - starting_score
             test_snake.update(self.food_array[net_score], net_score + 1, self.screen, self.font, self.stats)
-            Self.draw_food(self.food_array[0:net_score + 1], self.screen)
+            Self.draw_all_food(self.food_array[0:net_score + 1], self.screen)
             pygame.display.update()
             sleep(replay_speed)
 
@@ -207,7 +208,7 @@ struct Population[snake_count: Int, mutation_rate: Float32]:
             self.logger.status(str(stat) + ": " + str(self.stats[stat]) + " (+)")
 
     @staticmethod
-    fn draw_food(food_array: List[Vector2D], screen: PythonObject) raises:
+    fn draw_all_food(food_array: List[Vector2D], screen: PythonObject) raises:
         var pygame = Python.import_module("pygame")
         var last_food_x = food_array[-1][0] + game_width_offset
         var last_food_y = food_array[-1][1] + game_height_offset
@@ -221,6 +222,8 @@ struct Population[snake_count: Int, mutation_rate: Float32]:
             var food_y = food[1] + game_height_offset
             # Draws visual representation of this Food object to the running pygame window
             pygame.draw.rect(screen, (0, 100, 0), (int(food_x) * game_scale, int(food_y) * game_scale, game_scale, game_scale))
+
+    
 
     fn save(inout self) raises:
         for habitat_index in range(snake_count):
