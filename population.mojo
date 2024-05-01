@@ -28,6 +28,26 @@ alias VectorComponent = SIMD[dtype, 1]
 alias PopulationStats = Dict[String, Scalar[dtype]]
 alias RGB = Tuple[Int, Int, Int]
 
+struct PopulationPlayback[snake_count: Int, mutation_rate: Float32]:
+    var stats: PopulationStats
+    var snake: Snake
+    var food_array: List[Vector2D]
+    var screen: PythonObject
+
+    fn __init__(inout self, borrowed population: Population[snake_count, mutation_rate]) raises:
+        self.stats = population.stats
+        self.snake = Snake()
+        self.snake.neural_network.copy(population.best_snake.neural_network)
+        self.food_array = population.food_array
+        self.screen = population.screen
+
+    fn __init__(inout self, snake: Snake, food_array: List[Vector2D], stats: PopulationStats, screen: PythonObject) raises:
+        self.stats = stats
+        self.snake = Snake()
+        self.snake.neural_network.copy(snake.neural_network)
+        self.food_array = food_array
+        self.screen = screen
+
 struct Population[snake_count: Int, mutation_rate: Float32]:
     var habitat: AnyPointer[Snake]
     var food_array: List[Vector2D]
