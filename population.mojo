@@ -2,7 +2,7 @@ from python import Python
 from snake import Snake
 from collections import Set, Dict
 from collections.optional import Optional
-from neural_network import NeuralNetwork
+from neural_network import NeuralNetwork, NeuralNetworkSpec, NeuralNetworkShape
 from algorithm.sort import sort, partition
 from algorithm.functional import parallelize
 from math import sqrt, abs, floor
@@ -13,6 +13,7 @@ from time import sleep
 
 alias dtype = DType.float32
 alias neural_network_spec = List[Int](10, 20, 20, 3)
+alias SPEC = NeuralNetworkSpec(dtype, NeuralNetworkShape(10, 20, 20, 3))
 alias game_width: Int = 40
 alias game_width_offset: Int = game_width // 2
 alias game_height: Int = 40
@@ -57,7 +58,7 @@ struct Population[snake_count: Int, mutation_rate: Float32]:
         self.init_habitat(mutation_rate)
         
 
-    fn __getitem__(inout self, idx: Int) raises -> NeuralNetwork[dtype]:
+    fn __getitem__(inout self, idx: Int) raises -> NeuralNetwork[SPEC]:
         if idx >= snake_count or idx < 0:
             raise Error("Habitat index out of range")
 
@@ -117,7 +118,7 @@ struct Population[snake_count: Int, mutation_rate: Float32]:
         var max_fitness_index: Int
         var calculated_average: Float64
         var previous_stats = self.stats
-        var parent_traits = NeuralNetwork[dtype](neural_network_spec)
+        var parent_traits = NeuralNetwork[SPEC]()
         max_fitness_value, max_fitness_index, calculated_average = self.set_max_fitness()
         self.update_stats(
             generation=self.stats["generation"] + 1,
@@ -134,7 +135,7 @@ struct Population[snake_count: Int, mutation_rate: Float32]:
 
     fn replay(inout self, snake: Snake, replay_speed: Float64) raises:
         var pygame = Python.import_module("pygame")
-        var test_neural_network = NeuralNetwork[dtype](neural_network_spec)
+        var test_neural_network = NeuralNetwork[SPEC]()
         test_neural_network.copy(snake.neural_network)
         var test_snake = Snake(neural_network=test_neural_network)
         var active_food = self.food_array[0]
@@ -183,7 +184,7 @@ struct Population[snake_count: Int, mutation_rate: Float32]:
         else:
             self.habitat[new_index].neural_network.copy(self.best_snake.neural_network)
 
-    fn mutate_population(inout self, max_index: Int, parent_traits: NeuralNetwork[dtype]) raises:
+    fn mutate_population(inout self, max_index: Int, parent_traits: NeuralNetwork[SPEC]) raises:
         for index in range(snake_count):
             if index != max_index:
                 self.habitat[index].neural_network.copy(parent_traits)

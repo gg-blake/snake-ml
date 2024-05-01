@@ -1,5 +1,5 @@
 from python import Python
-from population import Vector2D, VectorComponent, dtype, neural_network_spec, game_width, game_width_offset, game_height, game_height_offset, starting_score, game_scale, ttl
+from population import SPEC, Vector2D, VectorComponent, dtype, neural_network_spec, game_width, game_width_offset, game_height, game_height_offset, starting_score, game_scale, ttl
 from neural_network import NeuralNetwork
 from math import abs, sqrt, clamp
 from tensor import Tensor, TensorSpec
@@ -11,14 +11,14 @@ struct Snake(Hashable):
     var direction: Vector2D
     var score: Int
     var min_dist: VectorComponent
-    var neural_network: NeuralNetwork[dtype]
+    var neural_network: NeuralNetwork[SPEC]
     var history: List[Vector2D]
     var fitness: Int
 
     fn __init__(inout self) raises:
         self.position = Vector2D(0, 0)
         self.direction = Vector2D(-1, 0)
-        self.neural_network = NeuralNetwork[dtype](spec=neural_network_spec)
+        self.neural_network = NeuralNetwork[SPEC]()
         self.score = starting_score
         self.min_dist = 0
         self.history = List[Vector2D]()
@@ -27,7 +27,7 @@ struct Snake(Hashable):
             self.history.append(self.position + Vector2D(self.score - i - 1, 0))
 
     # Make a Snake instance and transfer ownership of NeuralNetwork
-    fn __init__(inout self, owned neural_network: NeuralNetwork[dtype]):
+    fn __init__(inout self, owned neural_network: NeuralNetwork[SPEC]):
         self.position = Vector2D(0, 0)
         self.direction = Vector2D(-1, 0)
         self.neural_network = neural_network
