@@ -111,7 +111,7 @@ struct Population[snake_count: Int, mutation_rate: Float32]:
             if not self.habitat[index].is_dead():
                 self.active = True
             
-        self.draw_all_food(self.food_array, self.screen)
+        self.draw_latest_food()
         pygame.display.update()
 
     fn generate_next_habitat(inout self) raises:
@@ -150,7 +150,7 @@ struct Population[snake_count: Int, mutation_rate: Float32]:
             self.screen.fill((0, 0, 0))
             var net_score = test_snake.score - starting_score
             test_snake.update(self.food_array[net_score], net_score + 1, self.screen, self.font, self.stats)
-            Self.draw_all_food(self.food_array[0:net_score + 1], self.screen)
+            self.draw_all_food(self.food_array[0:net_score+1])
             pygame.display.update()
             sleep(replay_speed)
 
@@ -207,7 +207,7 @@ struct Population[snake_count: Int, mutation_rate: Float32]:
                 
             self.logger.status(str(stat) + ": " + str(self.stats[stat]) + " (+)")
 
-    @staticmethod
+    '''@staticmethod
     fn draw_all_food(food_array: List[Vector2D], screen: PythonObject) raises:
         var pygame = Python.import_module("pygame")
         var last_food_x = food_array[-1][0] + game_width_offset
@@ -221,9 +221,26 @@ struct Population[snake_count: Int, mutation_rate: Float32]:
             var food_x = food[0] + game_width_offset
             var food_y = food[1] + game_height_offset
             # Draws visual representation of this Food object to the running pygame window
-            pygame.draw.rect(screen, (0, 100, 0), (int(food_x) * game_scale, int(food_y) * game_scale, game_scale, game_scale))
+            pygame.draw.rect(screen, (0, 100, 0), (int(food_x) * game_scale, int(food_y) * game_scale, game_scale, game_scale))'''
 
-    
+
+    fn draw_latest_food(inout self) raises:
+        Self.draw_food(self.screen, self.food_array[-1], (0, 200, 0))
+
+    fn draw_all_food(inout self, food_array: List[Vector2D]) raises:
+        Self.draw_food(self.screen, food_array[-1], (0, 200, 0))
+        for index in range(len(food_array) - 1):
+            Self.draw_food(self.screen, food_array[index], (75, 75, 75))
+
+    fn draw_all_food(inout self) raises:
+        self.draw_all_food(self.food_array)
+
+    @staticmethod
+    fn draw_food(screen: PythonObject, position: Vector2D, color: RGB) raises:
+        var pygame = Python.import_module("pygame")
+        var food_x = position[0] + game_width_offset
+        var food_y = position[1] + game_height_offset
+        pygame.draw.rect(screen, color, (int(food_x) * game_scale, int(food_y) * game_scale, game_scale, game_scale))
 
     fn save(inout self) raises:
         for habitat_index in range(snake_count):
