@@ -34,19 +34,41 @@ struct PopulationPlayback[snake_count: Int, mutation_rate: Float32]:
     var food_array: List[Vector2D]
     var screen: PythonObject
 
-    fn __init__(inout self, borrowed population: Population[snake_count, mutation_rate]) raises:
-        self.stats = population.stats
-        self.snake = Snake()
-        self.snake.neural_network.copy(population.best_snake.neural_network)
-        self.food_array = population.food_array
-        self.screen = population.screen
-
     fn __init__(inout self, snake: Snake, food_array: List[Vector2D], stats: PopulationStats, screen: PythonObject) raises:
         self.stats = stats
         self.snake = Snake()
         self.snake.neural_network.copy(snake.neural_network)
         self.food_array = food_array
         self.screen = screen
+
+    fn replay(inout self, replay_speed: Float64) raises:
+        var pygame = Python.import_module("pygame")
+        var active_food = self.food_array[0]
+        var clock = pygame.time.Clock()
+        var run = True
+        while not self.snake.is_dead() and run:
+            var events = pygame.event.get()
+            for event in events:
+                if event.type == pygame.QUIT:
+                    run = False
+            self.screen.fill((0, 0, 0))
+            var net_score = self.snake.score - starting_score
+            self.snake.update(self.screen, self.food_array[net_score], self.stats)
+            self.draw_all_food(self.food_array[0:net_score+1])
+            pygame.display.update()
+            sleep(replay_speed)
+
+    fn draw_all_food(inout self, food_array: List[Vector2D]) raises:
+        Self.draw_food(self.screen, food_array[-1], (0, 200, 0))
+        for index in range(len(food_array) - 1):
+            Self.draw_food(self.screen, food_array[index], (75, 75, 75))
+
+    @staticmethod
+    fn draw_food(screen: PythonObject, position: Vector2D, color: RGB) raises:
+        var pygame = Python.import_module("pygame")
+        var food_x = position[0] + game_width_offset
+        var food_y = position[1] + game_height_offset
+        pygame.draw.rect(screen, color, (int(food_x) * game_scale, int(food_y) * game_scale, game_scale, game_scale))
 
 struct Population[snake_count: Int, mutation_rate: Float32]:
     var habitat: AnyPointer[Snake]
@@ -55,7 +77,7 @@ struct Population[snake_count: Int, mutation_rate: Float32]:
     var stats: PopulationStats
     var screen: PythonObject
     var logger: Logger
-    var best_snake: Snake
+    var best_snake: PopulationPlayback[snake_count, mutation_rate]
 
     fn __init__(inout self) raises:
         var pygame = Python.import_module("pygame")
@@ -72,8 +94,7 @@ struct Population[snake_count: Int, mutation_rate: Float32]:
         self.stats["average"] = 0
         self.stats["best"] = 0
         self.logger = Logger("logs")
-        self.best_snake = Snake()
-        self.best_snake.fitness = 0
+        self.best_snake = PopulationPlayback[snake_count, mutation_rate](Snake(), self.food_array, self.stats, self.screen)
         self.init_habitat(mutation_rate)
         
 
@@ -143,34 +164,13 @@ struct Population[snake_count: Int, mutation_rate: Float32]:
             generation=self.stats["generation"] + 1,
             max=max_fitness_value,
             average=calculated_average,
-            best=self.best_snake.fitness
+            best=self.best_snake.snake.fitness
         )
         self.log_stats(previous_stats)
         self.set_best_snake(max_fitness_value, max_fitness_index)
-        parent_traits.copy(self.best_snake.neural_network)
+        parent_traits.copy(self.best_snake.snake.neural_network)
         self.mutate_population(max_fitness_index, parent_traits)
         self.reset_population()
-
-
-    fn replay(inout self, snake: Snake, replay_speed: Float64) raises:
-        var pygame = Python.import_module("pygame")
-        var test_neural_network = NeuralNetwork[SPEC]()
-        test_neural_network.copy(snake.neural_network)
-        var test_snake = Snake(neural_network=test_neural_network)
-        var active_food = self.food_array[0]
-        var clock = pygame.time.Clock()
-        var run = True
-        while not test_snake.is_dead() and run:
-            var events = pygame.event.get()
-            for event in events:
-                if event.type == pygame.QUIT:
-                    run = False
-            self.screen.fill((0, 0, 0))
-            var net_score = test_snake.score - starting_score
-            test_snake.update(self.screen, self.food_array[net_score], self.stats)
-            self.draw_all_food(self.food_array[0:net_score+1])
-            pygame.display.update()
-            sleep(replay_speed)
 
     fn reset_population(inout self):
         for i in range(snake_count):
@@ -195,13 +195,15 @@ struct Population[snake_count: Int, mutation_rate: Float32]:
         return max_fitness_value, max_fitness_index, fitness_sum / snake_count
 
     fn set_best_snake(inout self, new_value: Int, new_index: Int) raises:
-        if new_value >= self.best_snake.fitness:
-            self.best_snake.neural_network.copy(self.habitat[new_index].neural_network)
-            self.best_snake.fitness = new_value
+        if new_value >= self.best_snake.snake.fitness:
             self.save()
-            self.replay(self.habitat[new_index], 0.02)
+            var snake = Snake()
+            snake.fitness = new_value
+            snake.neural_network.copy(self.habitat[new_index].neural_network)
+            self.best_snake = PopulationPlayback[snake_count, mutation_rate](snake, self.food_array, self.stats, self.screen)
+            self.best_snake.replay(0.02)
         else:
-            self.habitat[new_index].neural_network.copy(self.best_snake.neural_network)
+            self.habitat[new_index].neural_network.copy(self.best_snake.snake.neural_network)
 
     fn mutate_population(inout self, max_index: Int, parent_traits: NeuralNetwork[SPEC]) raises:
         for index in range(snake_count):
@@ -225,23 +227,6 @@ struct Population[snake_count: Int, mutation_rate: Float32]:
                 
             self.logger.status(str(stat) + ": " + str(self.stats[stat]) + " (+)")
 
-    '''@staticmethod
-    fn draw_all_food(food_array: List[Vector2D], screen: PythonObject) raises:
-        var pygame = Python.import_module("pygame")
-        var last_food_x = food_array[-1][0] + game_width_offset
-        var last_food_y = food_array[-1][1] + game_height_offset
-        pygame.draw.rect(screen, (0, 200, 0), (last_food_x.to_int() * game_scale, last_food_y.to_int() * game_scale, game_scale, game_scale))
-        if len(food_array) <= 1:
-            return
-
-        for index in range(0, len(food_array) - 1):
-            var food = food_array[index]
-            var food_x = food[0] + game_width_offset
-            var food_y = food[1] + game_height_offset
-            # Draws visual representation of this Food object to the running pygame window
-            pygame.draw.rect(screen, (0, 100, 0), (int(food_x) * game_scale, int(food_y) * game_scale, game_scale, game_scale))'''
-
-
     fn draw_latest_food(inout self) raises:
         Self.draw_food(self.screen, self.food_array[-1], (0, 200, 0))
 
@@ -262,7 +247,7 @@ struct Population[snake_count: Int, mutation_rate: Float32]:
 
     fn save(inout self) raises:
         for habitat_index in range(snake_count):
-            self.best_snake.neural_network.save()
+            self.best_snake.snake.neural_network.save()
 
         var filename_prefix = "data/" + str(self.habitat[0].neural_network.__repr__())
         self.logger.notice("Population data serialized as " + filename_prefix + "-#")

@@ -77,7 +77,7 @@ struct Snake(Hashable):
     fn is_dead(self) -> Bool:
         return self.direction[0].to_int() == 0 and self.direction[1].to_int() == 0
 
-    fn update(inout self, inout screen: PythonObject, fruit_position: Vector2D, stats: Dict[String, Float32]) raises:
+    fn update(inout self, screen: PythonObject, fruit_position: Vector2D, stats: Dict[String, Float32]) raises:
         if self.is_dead():
             return
 
