@@ -10,6 +10,8 @@ from tensor import Tensor
 from collections.vector import InlinedFixedVector
 from logger import Logger
 from time import sleep
+from buffer import Buffer
+from playback import PopulationPlayback
 
 alias dtype = DType.float32
 alias neural_network_spec = List[Int](10, 20, 20, 3)
@@ -27,48 +29,6 @@ alias Vector2D = SIMD[dtype, 2]
 alias VectorComponent = SIMD[dtype, 1]
 alias PopulationStats = Dict[String, Scalar[dtype]]
 alias RGB = Tuple[Int, Int, Int]
-
-struct PopulationPlayback[snake_count: Int, mutation_rate: Float32]:
-    var stats: PopulationStats
-    var snake: Snake
-    var food_array: List[Vector2D]
-    var screen: PythonObject
-
-    fn __init__(inout self, snake: Snake, food_array: List[Vector2D], stats: PopulationStats, screen: PythonObject) raises:
-        self.stats = stats
-        self.snake = Snake()
-        self.snake.neural_network.copy(snake.neural_network)
-        self.food_array = food_array
-        self.screen = screen
-
-    fn replay(inout self, replay_speed: Float64) raises:
-        var pygame = Python.import_module("pygame")
-        var active_food = self.food_array[0]
-        var clock = pygame.time.Clock()
-        var run = True
-        while not self.snake.is_dead() and run:
-            var events = pygame.event.get()
-            for event in events:
-                if event.type == pygame.QUIT:
-                    run = False
-            self.screen.fill((0, 0, 0))
-            var net_score = self.snake.score - starting_score
-            self.snake.update(self.screen, self.food_array[net_score], self.stats)
-            self.draw_all_food(self.food_array[0:net_score+1])
-            pygame.display.update()
-            sleep(replay_speed)
-
-    fn draw_all_food(inout self, food_array: List[Vector2D]) raises:
-        Self.draw_food(self.screen, food_array[-1], (0, 200, 0))
-        for index in range(len(food_array) - 1):
-            Self.draw_food(self.screen, food_array[index], (75, 75, 75))
-
-    @staticmethod
-    fn draw_food(screen: PythonObject, position: Vector2D, color: RGB) raises:
-        var pygame = Python.import_module("pygame")
-        var food_x = position[0] + game_width_offset
-        var food_y = position[1] + game_height_offset
-        pygame.draw.rect(screen, color, (int(food_x) * game_scale, int(food_y) * game_scale, game_scale, game_scale))
 
 struct Population[snake_count: Int, mutation_rate: Float32]:
     var habitat: AnyPointer[Snake]
@@ -160,6 +120,7 @@ struct Population[snake_count: Int, mutation_rate: Float32]:
         var previous_stats = self.stats
         var parent_traits = NeuralNetwork[SPEC]()
         max_fitness_value, max_fitness_index, calculated_average = self.set_max_fitness()
+        self.set_best_snake(max_fitness_value, max_fitness_index)
         self.update_stats(
             generation=self.stats["generation"] + 1,
             max=max_fitness_value,
@@ -167,7 +128,6 @@ struct Population[snake_count: Int, mutation_rate: Float32]:
             best=self.best_snake.snake.fitness
         )
         self.log_stats(previous_stats)
-        self.set_best_snake(max_fitness_value, max_fitness_index)
         parent_traits.copy(self.best_snake.snake.neural_network)
         self.mutate_population(max_fitness_index, parent_traits)
         self.reset_population()
