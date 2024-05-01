@@ -22,12 +22,15 @@ alias game_scale: Int = 26
 alias ttl: Int = 100
 alias snake_count: Int = 100
 alias timeout: Int = 200 # Number of snakes steps before population is automatically updated
+alias Vector2D = SIMD[dtype, 2]
+alias VectorComponent = SIMD[dtype, 1]
+alias PopulationStats = Dict[String, Scalar[dtype]]
 
 struct Population[snake_count: Int, mutation_rate: Float32]:
     var habitat: AnyPointer[Snake]
-    var food_array: List[SIMD[dtype, 2]]
+    var food_array: List[Vector2D]
     var active: Bool
-    var stats: Dict[String, Float32]
+    var stats: PopulationStats
     var screen: PythonObject
     var font: PythonObject
     var logger: Logger
@@ -39,11 +42,11 @@ struct Population[snake_count: Int, mutation_rate: Float32]:
         pygame.font.init()
         pygame.display.set_caption("Snake AI")
         self.habitat = AnyPointer[Snake].alloc(snake_count)
-        self.food_array = List[SIMD[dtype, 2]]()
+        self.food_array = List[Vector2D]()
         self.active = True
         self.screen = pygame.display.set_mode((game_width * game_scale, game_height * game_scale))
         self.font = pygame.font.SysFont('Comic Sans MS', 20)
-        self.stats = Dict[String, Float32]()
+        self.stats = PopulationStats()
         self.stats["generation"] = 0
         self.stats["max"] = ttl
         self.stats["average"] = 0
@@ -80,7 +83,7 @@ struct Population[snake_count: Int, mutation_rate: Float32]:
         var pyrandom = Python.import_module("random")
         var rand_x = pyrandom.randint(-game_width_offset, game_width_offset-1).to_float64().to_int()
         var rand_y = pyrandom.randint(-game_height_offset, game_height_offset-1).to_float64().to_int()
-        self.food_array.append(SIMD[dtype, 2](rand_x, rand_y))
+        self.food_array.append(Vector2D(rand_x, rand_y))
 
     fn update_habitat(inout self) raises:
         var pygame = Python.import_module("pygame")
@@ -192,7 +195,7 @@ struct Population[snake_count: Int, mutation_rate: Float32]:
             if current_key in self.stats:
                 self.stats[current_key] = kwargs[current_key]
     
-    fn log_stats(inout self, previous_stats: Dict[String, Float32]) raises:
+    fn log_stats(inout self, previous_stats: PopulationStats) raises:
         self.logger.cls()
         for key in self.stats.keys():
             var stat = key[]
@@ -203,7 +206,7 @@ struct Population[snake_count: Int, mutation_rate: Float32]:
             self.logger.status(str(stat) + ": " + str(self.stats[stat]) + " (+)")
 
     @staticmethod
-    fn draw_food(food_array: List[SIMD[dtype, 2]], screen: PythonObject) raises:
+    fn draw_food(food_array: List[Vector2D], screen: PythonObject) raises:
         var pygame = Python.import_module("pygame")
         var last_food_x = food_array[-1][0] + game_width_offset
         var last_food_y = food_array[-1][1] + game_height_offset

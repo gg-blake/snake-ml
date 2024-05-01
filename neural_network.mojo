@@ -67,7 +67,7 @@ struct NeuralNetwork[dtype: DType](Hashable):
 
         return self[idx][idx_row]
 
-    fn __getitem__(self, idx: Int, idx_row: Int, idx_col: Int) raises -> SIMD[dtype, 1]:
+    fn __getitem__(self, idx: Int, idx_row: Int, idx_col: Int) raises -> Scalar[dtype]:
         if idx_col >= self.data_spec[idx][1] or idx_col < 0:
             raise Error("Column index out of range")
 
@@ -121,7 +121,7 @@ struct NeuralNetwork[dtype: DType](Hashable):
         for row in range(self.data_spec[index][0]):
             for column in range(self.data_spec[index][1]):
                 var map_index = StaticIntTuple[2](row, column)
-                var value: SIMD[dtype, 1] = self[index, row, column]
+                var value: Scalar[dtype] = self[index, row, column]
                 mojo_tensor.__setitem__(map_index, value)
 
         return mojo_tensor

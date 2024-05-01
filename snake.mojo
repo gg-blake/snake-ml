@@ -1,5 +1,5 @@
 from python import Python
-from population import dtype, neural_network_spec, game_width, game_width_offset, game_height, game_height_offset, starting_score, game_scale, ttl
+from population import Vector2D, VectorComponent, dtype, neural_network_spec, game_width, game_width_offset, game_height, game_height_offset, starting_score, game_scale, ttl
 from neural_network import NeuralNetwork
 from math import abs, sqrt, clamp
 from tensor import Tensor, TensorSpec
@@ -7,41 +7,41 @@ from logger import Logger
 
 
 struct Snake(Hashable):
-    var position: SIMD[dtype, 2]
-    var direction: SIMD[dtype, 2]
+    var position: Vector2D
+    var direction: Vector2D
     var score: Int
-    var min_dist: SIMD[dtype, 1]
+    var min_dist: VectorComponent
     var neural_network: NeuralNetwork[dtype]
-    var history: List[SIMD[dtype, 2]]
+    var history: List[Vector2D]
     var fitness: Int
 
     fn __init__(inout self) raises:
-        self.position = SIMD[dtype, 2](0, 0)
-        self.direction = SIMD[dtype, 2](-1, 0)
+        self.position = Vector2D(0, 0)
+        self.direction = Vector2D(-1, 0)
         self.neural_network = NeuralNetwork[dtype](spec=neural_network_spec)
         self.score = starting_score
         self.min_dist = 0
-        self.history = List[SIMD[dtype, 2]]()
+        self.history = List[Vector2D]()
         self.fitness = ttl
         for i in range(self.score):
-            self.history.append(self.position + SIMD[dtype, 2](self.score - i - 1, 0))
+            self.history.append(self.position + Vector2D(self.score - i - 1, 0))
 
     # Make a Snake instance and transfer ownership of NeuralNetwork
     fn __init__(inout self, owned neural_network: NeuralNetwork[dtype]):
-        self.position = SIMD[dtype, 2](0, 0)
-        self.direction = SIMD[dtype, 2](-1, 0)
+        self.position = Vector2D(0, 0)
+        self.direction = Vector2D(-1, 0)
         self.neural_network = neural_network
         self.score = starting_score
         self.min_dist = 0
-        self.history = List[SIMD[dtype, 2]]()
+        self.history = List[Vector2D]()
         self.fitness = ttl
         for i in range(self.score):
-            self.history.append(self.position + SIMD[dtype, 2](self.score - i - 1, 0))
+            self.history.append(self.position + Vector2D(self.score - i - 1, 0))
         
     fn __moveinit__(inout self, owned existing: Self):
         self = Self(existing.neural_network)
 
-    fn __contains__(self, point: SIMD[dtype, 2]) -> SIMD[DType.bool, 1]:
+    fn __contains__(self, point: Vector2D) -> SIMD[DType.bool, 1]:
         for p in self.history:
             if p[] == point:
                 return True
@@ -65,19 +65,19 @@ struct Snake(Hashable):
         self.neural_network^.__del__()
 
     fn reset(inout self):
-        self.position = SIMD[dtype, 2](0, 0)
-        self.direction = SIMD[dtype, 2](-1, 0)
+        self.position = Vector2D(0, 0)
+        self.direction = Vector2D(-1, 0)
         self.score = starting_score
         self.min_dist = 0
-        self.history = List[SIMD[dtype, 2]]()
+        self.history = List[Vector2D]()
         self.fitness = ttl
         for i in range(self.score):
-            self.history.append(self.position + SIMD[dtype, 2](self.score - i - 1, 0))
+            self.history.append(self.position + Vector2D(self.score - i - 1, 0))
 
     fn is_dead(self) -> Bool:
         return self.direction[0].to_int() == 0 and self.direction[1].to_int() == 0
 
-    fn update(inout self, fruit_position: SIMD[dtype, 2], borrowed food_array_length: Int, inout screen: PythonObject, inout font: PythonObject, stats: Dict[String, Float32]) raises:
+    fn update(inout self, fruit_position: Vector2D, borrowed food_array_length: Int, inout screen: PythonObject, inout font: PythonObject, stats: Dict[String, Float32]) raises:
         if self.is_dead():
             return
 
@@ -89,15 +89,15 @@ struct Snake(Hashable):
         var fruit_top = (fruit_position < self.position)[1].to_int()
         var fruit_bottom = (fruit_position > self.position)[1].to_int()
         
-        var wall_left = ~Snake.in_bounds(self.position + SIMD[dtype, 2](-1, 0)).to_int()
-        var wall_right = ~Snake.in_bounds(self.position + SIMD[dtype, 2](1, 0)).to_int()
-        var wall_top = ~Snake.in_bounds(self.position + SIMD[dtype, 2](0, -1)).to_int()
-        var wall_bottom = ~Snake.in_bounds(self.position + SIMD[dtype, 2](0, 1)).to_int()
+        var wall_left = ~Snake.in_bounds(self.position + Vector2D(-1, 0)).to_int()
+        var wall_right = ~Snake.in_bounds(self.position + Vector2D(1, 0)).to_int()
+        var wall_top = ~Snake.in_bounds(self.position + Vector2D(0, -1)).to_int()
+        var wall_bottom = ~Snake.in_bounds(self.position + Vector2D(0, 1)).to_int()
 
-        var body_left = (self.position + SIMD[dtype, 2](-1, 0) in self).to_int()
-        var body_right = (self.position + SIMD[dtype, 2](1, 0) in self).to_int()
-        var body_top = (self.position + SIMD[dtype, 2](0, -1) in self).to_int()
-        var body_bottom = (self.position + SIMD[dtype, 2](0, 1) in self).to_int()
+        var body_left = (self.position + Vector2D(-1, 0) in self).to_int()
+        var body_right = (self.position + Vector2D(1, 0) in self).to_int()
+        var body_top = (self.position + Vector2D(0, -1) in self).to_int()
+        var body_bottom = (self.position + Vector2D(0, 1) in self).to_int()
 
         var facing_left = (self.direction[0] == -1).to_int()
         var facing_right = (self.direction[0] == 1).to_int()
@@ -128,13 +128,13 @@ struct Snake(Hashable):
         output = torch.argmax(output)
 
         var direction_num = 0
-        if SIMD[dtype, 2](0, -1) == self.direction:
+        if Vector2D(0, -1) == self.direction:
             direction_num = 0
-        elif SIMD[dtype, 2](1, 0) == self.direction:
+        elif Vector2D(1, 0) == self.direction:
             direction_num = 1
-        elif SIMD[dtype, 2](0, 1) == self.direction:
+        elif Vector2D(0, 1) == self.direction:
             direction_num = 2
-        elif SIMD[dtype, 2](-1, 0) == self.direction:
+        elif Vector2D(-1, 0) == self.direction:
             direction_num = 3
 
         if output == 0:
@@ -151,16 +151,16 @@ struct Snake(Hashable):
 
         if direction_num == 0:
             # up
-            self.direction = SIMD[dtype, 2](0, -1)
+            self.direction = Vector2D(0, -1)
         elif direction_num == 1:
             # right
-            self.direction = SIMD[dtype, 2](1, 0)
+            self.direction = Vector2D(1, 0)
         elif direction_num == 2:
             # down
-            self.direction = SIMD[dtype, 2](0, 1)
+            self.direction = Vector2D(0, 1)
         elif direction_num == 3:
             # left
-            self.direction = SIMD[dtype, 2](-1, 0)
+            self.direction = Vector2D(-1, 0)
 
         var old_fitness = self.fitness
         self.move(fruit_position)
@@ -168,21 +168,21 @@ struct Snake(Hashable):
         #print(self.position)
 
     @staticmethod
-    fn in_bounds(position: SIMD[dtype, 2]) -> SIMD[DType.bool, 1]:
+    fn in_bounds(position: Vector2D) -> SIMD[DType.bool, 1]:
         return position[0] >= -game_width_offset and position[0] < game_width_offset  and position[1] >= -game_height_offset and position[1] < game_height_offset 
 
     @staticmethod
-    fn distance(point_a: SIMD[dtype, 2], point_b: SIMD[dtype, 2]) -> SIMD[dtype, 1]:
+    fn distance(point_a: Vector2D, point_b: Vector2D) -> VectorComponent:
         return sqrt((point_a[0] - point_b[0])**2 + (point_a[1] - point_b[1])**2)
 
-    fn move(inout self, fruit_position: SIMD[dtype, 2]):
+    fn move(inout self, fruit_position: Vector2D):
         var next_position = self.position + self.direction
         # Death detection
         var active_death = next_position in self or not Snake.in_bounds(self.position)
         var passive_death = self.fitness <= (self.score - starting_score) * ttl
         if active_death or passive_death:
             # Active death: If the snake hits the game bounds or tail
-            self.direction = SIMD[dtype, 2].splat(0)
+            self.direction = Vector2D.splat(0)
             return
 
         # Food detection
