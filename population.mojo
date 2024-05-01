@@ -54,7 +54,6 @@ struct Population[snake_count: Int, mutation_rate: Float32]:
     var active: Bool
     var stats: PopulationStats
     var screen: PythonObject
-    var font: PythonObject
     var logger: Logger
     var best_snake: Snake
 
@@ -67,7 +66,6 @@ struct Population[snake_count: Int, mutation_rate: Float32]:
         self.food_array = List[Vector2D]()
         self.active = True
         self.screen = pygame.display.set_mode((game_width * game_scale, game_height * game_scale))
-        self.font = pygame.font.SysFont('Comic Sans MS', 20)
         self.stats = PopulationStats()
         self.stats["generation"] = 0
         self.stats["max"] = ttl
@@ -121,7 +119,7 @@ struct Population[snake_count: Int, mutation_rate: Float32]:
             
             # Update snake
             var current_snake_fruit = self.food_array[self.habitat[index].score - starting_score]
-            self.habitat[index].update(current_snake_fruit, len(self.food_array), self.screen, self.font, self.stats)
+            self.habitat[index].update(current_snake_fruit, len(self.food_array), self.screen, self.stats)
 
             # Check if any other snakes are still active
             if self.active:
@@ -169,7 +167,7 @@ struct Population[snake_count: Int, mutation_rate: Float32]:
                     run = False
             self.screen.fill((0, 0, 0))
             var net_score = test_snake.score - starting_score
-            test_snake.update(self.food_array[net_score], net_score + 1, self.screen, self.font, self.stats)
+            test_snake.update(self.food_array[net_score], net_score + 1, self.screen, self.stats)
             self.draw_all_food(self.food_array[0:net_score+1])
             pygame.display.update()
             sleep(replay_speed)
