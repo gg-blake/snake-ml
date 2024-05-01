@@ -77,7 +77,7 @@ struct Snake(Hashable):
     fn is_dead(self) -> Bool:
         return self.direction[0].to_int() == 0 and self.direction[1].to_int() == 0
 
-    fn update(inout self, fruit_position: Vector2D, borrowed food_array_length: Int, inout screen: PythonObject, stats: Dict[String, Float32]) raises:
+    fn update(inout self, inout screen: PythonObject, fruit_position: Vector2D, stats: Dict[String, Float32]) raises:
         if self.is_dead():
             return
 
@@ -164,7 +164,7 @@ struct Snake(Hashable):
 
         var old_fitness = self.fitness
         self.move(fruit_position)
-        self.draw(food_array_length, screen, old_fitness, stats["best"].to_int())
+        self.draw(screen, old_fitness, stats["best"].to_int())
         #print(self.position)
 
     @staticmethod
@@ -203,7 +203,7 @@ struct Snake(Hashable):
             self.history = self.history[1:]
 
     # Draws visual representation of this Snake object to the running pygame window
-    fn draw(borrowed self, current_food_count: Int, screen: PythonObject, old_fitness: Int, best_fitness: Int) raises:
+    fn draw(borrowed self, screen: PythonObject, old_fitness: Int, best_fitness: Int) raises:
         var pygame = Python.import_module("pygame")
         var font = pygame.font.SysFont('Comic Sans MS', 20)
         # Draw the body
