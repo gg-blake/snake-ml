@@ -4,11 +4,11 @@ from logger import Logger
 from time import sleep
 
 alias snake_count: Int = 50
-alias timeout: Int = 200 # Number of snakes steps before population is automatically updated
+alias mutation_rate: Float32 = 0.8
 
 fn main() raises:
     var pygame = Python.import_module("pygame")
-    var population = Population[snake_count]()
+    var population = Population[snake_count, mutation_rate]()
     var run = True
     while run:
         while population.active and run:
@@ -18,7 +18,4 @@ fn main() raises:
                     run = False
 
             population.update_habitat()
-        population.generate_next_habitat(
-            survival_rate=0.25,
-            mutation_rate=1.2
-        )
+        population.generate_next_habitat()

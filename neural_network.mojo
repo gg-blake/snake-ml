@@ -140,22 +140,22 @@ struct NeuralNetwork[dtype: DType](Hashable):
         
         return pytorch_tensor
 
-    fn _dump_tensor(self, habitat_index: Int, layer_index: Int) raises:
-        var filename = "data/" + str(self.__repr__()) + "-" + str(habitat_index) + "-" +str(layer_index)
+    fn _dump_tensor(self, layer_index: Int) raises:
+        var filename = "data/" + str(self.__repr__()) + "-" +str(layer_index)
         var current_layer = self._export_tensor(layer_index)
         current_layer.save(filename)
 
-    fn save(inout self, habitat_index: Int) raises:
+    fn save(inout self) raises:
         for layer_index in range(len(self.data_spec)):
-            self._dump_tensor(habitat_index, layer_index)
+            self._dump_tensor(layer_index)
 
-    fn _load_tensor(inout self, habitat_index: Int, layer_index: Int) raises:
+    fn _load_tensor(inout self, layer_index: Int) raises:
         var torch = Python.import_module("torch")
-        var filename = "data/" + str(self.__repr__()) + "-" + str(habitat_index) + "-" +str(layer_index)
+        var filename = "data/" + str(self.__repr__()) + "-" +str(layer_index)
         var mojo_tensor = Tensor[dtype].load(filename)
         var pytorch_tensor = NeuralNetwork._import_tensor(mojo_tensor)
         self[layer_index] = pytorch_tensor
 
-    fn load(inout self, habitat_index: Int) raises:
+    fn load(inout self) raises:
         for layer_index in range(len(self.data_spec)):
-            self._load_tensor(habitat_index, layer_index)
+            self._load_tensor(layer_index)

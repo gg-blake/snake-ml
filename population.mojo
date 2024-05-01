@@ -12,7 +12,7 @@ from logger import Logger
 from time import sleep
 
 alias dtype = DType.float32
-alias neural_network_spec = List[Int](10, 10, 10, 3)
+alias neural_network_spec = List[Int](10, 20, 20, 3)
 alias game_width: Int = 40
 alias game_width_offset: Int = game_width // 2
 alias game_height: Int = 40
@@ -23,7 +23,7 @@ alias ttl: Int = 100
 alias snake_count: Int = 100
 alias timeout: Int = 200 # Number of snakes steps before population is automatically updated
 
-struct Population[snake_count: Int]:
+struct Population[snake_count: Int, mutation_rate: Float32]:
     var habitat: AnyPointer[Snake]
     var food_array: List[SIMD[dtype, 2]]
     var active: Bool
@@ -47,12 +47,11 @@ struct Population[snake_count: Int]:
         self.stats["generation"] = 0
         self.stats["max"] = ttl
         self.stats["average"] = 0
-        self.stats["median"] = 0
         self.stats["best"] = 0
         self.logger = Logger("logs")
         self.best_snake = Snake()
         self.best_snake.fitness = 0
-        self.init_habitat()
+        self.init_habitat(mutation_rate)
         
 
     fn __getitem__(inout self, idx: Int) raises -> NeuralNetwork[dtype]:
@@ -61,15 +60,6 @@ struct Population[snake_count: Int]:
 
         return self.habitat[idx].neural_network
 
-    fn __getitem__(inout self, idx: Int, idx_layer: Int) raises -> PythonObject:
-        return self.habitat[idx].neural_network[idx_layer]
-
-    fn __getitem__(inout self, idx: Int, idx_layer: Int, idx_row: Int) raises -> PythonObject:
-        return self.habitat[idx].neural_network[idx_layer, idx_row]
-
-    fn __getitem__(inout self, idx: Int, idx_layer: Int, idx_row: Int, idx_col: Int) raises -> SIMD[dtype, 1]:
-        return self.habitat[idx].neural_network[idx_layer, idx_row, idx_col]
-
     fn __del__(owned self):
         self.habitat.free()
         try:
@@ -77,18 +67,17 @@ struct Population[snake_count: Int]:
         except:
             self.logger.error("Population save unsuccessful. FeelsBadMan.")
 
-    fn init_habitat(inout self) raises:
+    fn init_habitat(inout self, mutation_rate: Float32) raises:
         self.generate_food()
         for id in range(snake_count):
             self.habitat[id] = Snake()
         try:
-            self.load()
+            self.load(mutation_rate)
         except:
             self.logger.warn("No serialized data found. Starting new population.")
 
     fn generate_food(inout self) raises:
         var pyrandom = Python.import_module("random")
-        var collections = Python.import_module("collections")
         var rand_x = pyrandom.randint(-game_width_offset, game_width_offset-1).to_float64().to_int()
         var rand_y = pyrandom.randint(-game_height_offset, game_height_offset-1).to_float64().to_int()
         self.food_array.append(SIMD[dtype, 2](rand_x, rand_y))
@@ -98,24 +87,49 @@ struct Population[snake_count: Int]:
 
         self.screen.fill((0, 0, 0))
 
+        # Check if all snakes are dead after update cycle
         self.active = False
         for index in range(snake_count):
+            # Resize food array if necessary
             if self.habitat[index].score - starting_score >= len(self.food_array):
                 self.generate_food()
             
+            # Update snake
             var current_snake_fruit = self.food_array[self.habitat[index].score - starting_score]
             self.habitat[index].update(current_snake_fruit, len(self.food_array), self.screen, self.font, self.stats)
+
+            # Check if any other snakes are still active
+            if self.active:
+                continue
         
-            if self.habitat[index].direction[0] != 0 or self.habitat[index].direction[1] != 0:
+            # Check if this snake is dead
+            if not self.habitat[index].is_dead():
                 self.active = True
             
         self.draw_food(self.food_array, self.screen)
-        '''var game_font = pygame.font.SysFont('Comic Sans MS', 10)
-        var text_surface = game_font.render("Hello World!", False, (255, 255, 255))
-        self.screen.blit(text_surface, (40, 40))'''
         pygame.display.update()
 
-    fn replay(inout self, snake: Snake) raises:
+    fn generate_next_habitat(inout self) raises:
+        var max_fitness_value: Int
+        var max_fitness_index: Int
+        var calculated_average: Float64
+        var previous_stats = self.stats
+        var parent_traits = NeuralNetwork[dtype](neural_network_spec)
+        max_fitness_value, max_fitness_index, calculated_average = self.set_max_fitness()
+        self.update_stats(
+            generation=self.stats["generation"] + 1,
+            max=max_fitness_value,
+            average=calculated_average,
+            best=self.best_snake.fitness
+        )
+        self.log_stats(previous_stats)
+        self.set_best_snake(max_fitness_value, max_fitness_index)
+        parent_traits.copy(self.best_snake.neural_network)
+        self.mutate_population(max_fitness_index, parent_traits)
+        self.reset_population()
+
+
+    fn replay(inout self, snake: Snake, replay_speed: Float64) raises:
         var pygame = Python.import_module("pygame")
         var test_neural_network = NeuralNetwork[dtype](neural_network_spec)
         test_neural_network.copy(snake.neural_network)
@@ -133,13 +147,9 @@ struct Population[snake_count: Int]:
             test_snake.update(self.food_array[net_score], net_score + 1, self.screen, self.font, self.stats)
             Self.draw_food(self.food_array[0:net_score + 1], self.screen)
             pygame.display.update()
-            #self.logger.status("Distance: "+str(test_snake.distance(self.food_array[net_score])))
-            sleep(0.05)
+            sleep(replay_speed)
 
-
-            
-
-    fn reset_habitat(inout self):
+    fn reset_population(inout self):
         for i in range(snake_count):
             self.habitat[i].reset()
 
@@ -148,100 +158,49 @@ struct Population[snake_count: Int]:
 
         self.active = True
 
-
-    fn generate_next_habitat(inout self, survival_rate: Float32, mutation_rate: Float32) raises:
-        var snake_fitnesses: List[Float32] = List[Float32]()
-
-
-        for index in range(0, snake_count):
-            snake_fitnesses.append(self.habitat[index].fitness)
-
-        sort(snake_fitnesses) # Sort in ascending order (low to high)
-
-        var k = floor(snake_count - (snake_count * survival_rate)).to_int() # Reverse list index
-        var survival_threshold = snake_fitnesses[k] # Top k snakes live to next habitat
-        var parent_threshold = snake_fitnesses[-1] # Top two become parents
-        var parent_indices = List[Int]()
-        var survived_indices = List[Int]()
-        var child_indices = List[Int]()
-
-        
-        
-        
-
+    fn set_max_fitness(inout self) -> (Int, Int, Float64):
+        var max_fitness_value = 0
+        var max_fitness_index = 0
+        var fitness_sum = 0
         for index in range(snake_count):
-            if self.habitat[index].fitness >= parent_threshold.to_int() and len(parent_indices) < 1:
-                parent_indices.append(index)
-            elif self.habitat[index].fitness >= survival_threshold.to_int():
-                survived_indices.append(index)
-            else:
-                child_indices.append(index)
-            
-        var parent_traits = NeuralNetwork[dtype](neural_network_spec)
+            var fitness = self.habitat[index].fitness
+            if self.habitat[index].fitness > max_fitness_value:
+                max_fitness_value = fitness
+                max_fitness_index = index
+            fitness_sum += fitness
 
-        if self.habitat[parent_indices[0]].fitness >= self.best_snake.fitness:
-            self.best_snake.neural_network.copy(self.habitat[parent_indices[0]].neural_network)
+        return max_fitness_value, max_fitness_index, fitness_sum / snake_count
 
-        parent_traits.copy(self.best_snake.neural_network)
-
-        for survived_index in survived_indices:
-            self.habitat[survived_index[]].neural_network.copy(parent_traits)
-            self.habitat[survived_index[]].neural_network.mutate(mutation_rate)        
-        
-        for child_index in child_indices:
-            self.habitat[child_index[]].neural_network.copy(parent_traits)
-            self.habitat[child_index[]].neural_network.mutate(mutation_rate)
-
-        if self.habitat[parent_indices[0]].fitness >= self.best_snake.fitness:
-            self.best_snake.fitness = self.habitat[parent_indices[0]].fitness
-            self.replay(self.habitat[parent_indices[0]])
-
-        var calculated_median = Self.median(snake_fitnesses)
-        var calculated_average = Self.average(snake_fitnesses)
-        
-        self.reset_habitat()
-        self.log_stats(
-            generation=self.stats["generation"] + 1,
-            max=parent_threshold, 
-            average=calculated_average,
-            median=calculated_median,
-            best=self.best_snake.fitness
-        )
-
-
-    @staticmethod
-    fn average(lst: List[Float32]) -> Float32:
-        var total: Float32 = 0
-        for i in lst:
-            total += i[]
-
-        return total / len(lst)
-
-    @staticmethod
-    fn median(lst: List[Float32]) -> Float32:
-        if len(lst) % 2 == 0:
-            var median_a = lst[(len(lst) // 2) - 1]
-            var median_b = lst[len(lst) // 2]
-            return (median_a + median_b) / 2
+    fn set_best_snake(inout self, new_value: Int, new_index: Int) raises:
+        if new_value >= self.best_snake.fitness:
+            self.best_snake.neural_network.copy(self.habitat[new_index].neural_network)
+            self.best_snake.fitness = new_value
+            self.save()
+            self.replay(self.habitat[new_index], 0.02)
         else:
-            return lst[(len(lst) - 1) // 2]
+            self.habitat[new_index].neural_network.copy(self.best_snake.neural_network)
 
-    
-    fn log_stats(inout self, **kwargs: Float32) raises:
-        var previous_stats = self.stats
+    fn mutate_population(inout self, max_index: Int, parent_traits: NeuralNetwork[dtype]) raises:
+        for index in range(snake_count):
+            if index != max_index:
+                self.habitat[index].neural_network.copy(parent_traits)
+                self.habitat[index].neural_network.mutate(mutation_rate)
+
+    fn update_stats(inout self, **kwargs: Float32) raises:
         for key in kwargs.keys():
             var current_key = key[]
             if current_key in self.stats:
                 self.stats[current_key] = kwargs[current_key]
-
+    
+    fn log_stats(inout self, previous_stats: Dict[String, Float32]) raises:
         self.logger.cls()
         for key in self.stats.keys():
             var stat = key[]
-            if self.stats[stat] > previous_stats[stat]:
-                self.logger.status(str(stat) + ": " + str(self.stats[stat]) + " (+)")
-            else:
+            if self.stats[stat] <= previous_stats[stat]:
                 self.logger.status(str(stat) + ": " + str(self.stats[stat]) + " (-)")
-        
+                continue
+                
+            self.logger.status(str(stat) + ": " + str(self.stats[stat]) + " (+)")
 
     @staticmethod
     fn draw_food(food_array: List[SIMD[dtype, 2]], screen: PythonObject) raises:
@@ -261,10 +220,10 @@ struct Population[snake_count: Int]:
 
     fn save(inout self) raises:
         for habitat_index in range(snake_count):
-            self.habitat[habitat_index].neural_network.save(habitat_index)
+            self.best_snake.neural_network.save()
 
         var filename_prefix = "data/" + str(self.habitat[0].neural_network.__repr__())
-        self.logger.notice("Population data serialized as " + filename_prefix + "-#-#")
+        self.logger.notice("Population data serialized as " + filename_prefix + "-#")
 
     fn wait_for_save(inout self) raises:
         var input = Python.import_module("builtins").input
@@ -276,26 +235,11 @@ struct Population[snake_count: Int]:
                 break
         self.save()
 
-    fn load(inout self) raises:
-        for habitat_index in range(snake_count):
-            self.habitat[habitat_index].neural_network.load(habitat_index)
+    fn load(inout self, mutation_rate: Float32) raises:
+        self.habitat[0].neural_network.load()
+        for habitat_index in range(1, snake_count):
+            self.habitat[habitat_index].neural_network.copy(self.habitat[0].neural_network)
+            self.habitat[habitat_index].neural_network.mutate(mutation_rate)
 
         var filename_prefix = "data/" + str(self.habitat[0].neural_network.__repr__())
-        self.logger.notice("Population data deserialized from " + filename_prefix + "-#-#")
-        
-fn main() raises:
-    var pygame = Python.import_module("pygame")
-    var population = Population[snake_count]()
-    var run = True
-    while run:
-        while population.active and run:
-            var events = pygame.event.get()
-            for event in events:
-                if event.type == pygame.QUIT:
-                    run = False
-
-            population.update_habitat()
-        population.generate_next_habitat(
-            survival_rate=0.05,
-            mutation_rate=0.6
-        )
+        self.logger.notice("Population data deserialized from " + filename_prefix + "-#")
