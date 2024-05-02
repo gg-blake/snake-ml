@@ -15,7 +15,7 @@ fn main() raises:
                     run = False
             
             var keys = pygame.key.get_pressed()
-            if keys[pygame.K_SPACE]:
+            if keys[pygame.K_SPACE] and not population.replay_active:
                 population.replay_active = True
                 population.logger.notice("Replay requested")
 

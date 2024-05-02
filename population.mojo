@@ -23,8 +23,8 @@ alias SPEC = NeuralNetworkSpec(DTYPE, SHAPE)
 
 # Population constants
 alias INITIAL_SCORE: Int = 5
-alias TTL: Int = 100
-alias SNAKE_COUNT: Int = 50
+alias TTL: Int = 2 * (GAME_WIDTH + GAME_HEIGHT)
+alias SNAKE_COUNT: Int = 35
 alias MUTATION_RATE: Float32 = 0.5
 
 # Type aliases
@@ -53,11 +53,22 @@ struct Population:
         self.habitat = AnyPointer[Snake].alloc(SNAKE_COUNT)
         self.food_array = List[Vector2D]()
         self.stats = PopulationStats()
+        self.stats["generation"] = 0
+        self.stats["max"] = TTL
+        self.stats["average"] = 0
+        self.stats["best_fitness"] = 0
+        self.stats["best_score"] = 0
         self.best_snake = SnakeHandler(Snake(), self.food_array, self.stats, self.screen)
         self.active = True
         self.replay_active = False
-        self.reset_stats()
         self.init_habitat()
+        
+
+    fn __getitem__(inout self, idx: Int) raises -> NeuralNetwork[SPEC]:
+        if idx >= SNAKE_COUNT or idx < 0:
+            raise Error("Habitat index out of range")
+
+        return self.habitat[idx].neural_network
 
     fn __del__(owned self):
         self.habitat.free()
@@ -70,7 +81,8 @@ struct Population:
         self.stats["generation"] = 0
         self.stats["max"] = TTL
         self.stats["average"] = 0
-        self.stats["best"] = 0
+        self.stats["best_fitness"] = 0
+        self.stats["best_score"] = 0
 
     fn init_habitat(inout self) raises:
         self.generate_food()
@@ -80,8 +92,10 @@ struct Population:
             self.best_snake.load()
             self.log_stats(self.stats)
             self.best_snake.replay(0.1)
-            self.stats["best"] = self.best_snake.snake.fitness
+            self.stats["best_fitness"] = self.best_snake.snake.fitness
             self.load()
+            
+            
         except:
             self.logger.warn("No serialized data found. Starting new population.")
 
@@ -93,6 +107,7 @@ struct Population:
 
     fn update_habitat(inout self) raises:
         var pygame = Python.import_module("pygame")
+
         self.screen.fill((0, 0, 0))
 
         # Check if all snakes are dead after update cycle
@@ -129,7 +144,8 @@ struct Population:
             generation=self.stats["generation"] + 1,
             max=max_fitness_value,
             average=calculated_average,
-            best=self.best_snake.snake.fitness
+            best_fitness=self.best_snake.snake.fitness,
+            best_score=self.best_snake.snake.score-INITIAL_SCORE
         )
         self.log_stats(previous_stats)
         parent_traits.copy(self.best_snake.snake.neural_network)
@@ -160,12 +176,12 @@ struct Population:
 
     fn set_best_snake(inout self, new_value: Int, new_index: Int) raises:
         var previous_stats = self.stats
-        if new_value > int(previous_stats["best"]):
+        if new_value > int(previous_stats["best_fitness"]):
             self.save()
             var snake = Snake()
             snake.fitness = new_value
             snake.neural_network.copy(self.habitat[new_index].neural_network)
-            self.stats["best"] = new_value
+            self.stats["best_fitness"] = new_value
             self.best_snake = SnakeHandler(snake, self.food_array, self.stats, self.screen)
             self.log_stats(previous_stats)
             self.logger.notice("New best snake found with fitness " + str(new_value) + "! Replay requested")
@@ -176,7 +192,7 @@ struct Population:
         if self.replay_active:
             self.logger.notice("Replay started")
             self.best_snake.replay(0.1)
-            self.best_snake.snake.fitness = int(self.stats["best"])
+            self.best_snake.snake.fitness = int(self.stats["best_fitness"])
             self.replay_active = False
 
         

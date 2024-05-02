@@ -164,7 +164,7 @@ struct Snake(Hashable):
 
         var old_fitness = self.fitness
         self.move(fruit_position)
-        self.draw(screen, old_fitness, stats["best"].to_int())
+        self.draw(screen, old_fitness, stats["best_fitness"].to_int())
         #print(self.position)
 
     @staticmethod
@@ -188,14 +188,16 @@ struct Snake(Hashable):
         # Food detection
         if next_position == fruit_position:
             self.score += 1
-            self.fitness = (self.score - INITIAL_SCORE + 1) * TTL - (TTL // 2)
+            self.fitness = (self.score - INITIAL_SCORE + 1) * TTL# + ((self.score - INITIAL_SCORE) * (TTL // 8))
         else:
             var current_distance = Self.distance(self.position, fruit_position)
             var next_distance = Self.distance(next_position, fruit_position)
-            if next_distance < current_distance:
+            '''if next_distance < current_distance:
                 self.fitness += 1
             else:
-                self.fitness -= 2
+                self.fitness -= 2'''
+
+            self.fitness -= 1
 
         self.position = next_position
         self.history.append(self.position)
