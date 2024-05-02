@@ -5,7 +5,7 @@ from time import sleep
 from tensor import Tensor
 from logger import Logger
 
-struct PopulationPlayback[snake_count: Int, mutation_rate: Float32]:
+struct SnakeHandler[snake_count: Int, mutation_rate: Float32]:
     var stats: PopulationStats
     var snake: Snake
     var food_array: List[Vector2D]
@@ -15,12 +15,12 @@ struct PopulationPlayback[snake_count: Int, mutation_rate: Float32]:
         self.stats = stats
         self.snake = Snake()
         self.snake.neural_network.copy(snake.neural_network)
+        self.snake.fitness = snake.fitness
         self.food_array = food_array
         self.screen = screen
-            
 
     fn replay(inout self, replay_speed: Float64) raises:
-        var fitness_preserved = self.snake.fitness
+        self.snake.reset()
         var current_speed = replay_speed
         var pygame = Python.import_module("pygame")
         var active_food = self.food_array[0]
@@ -31,18 +31,27 @@ struct PopulationPlayback[snake_count: Int, mutation_rate: Float32]:
             for event in events:
                 if event.type == pygame.QUIT:
                     run = False
-                elif event.type == pygame.KEYDOWN and event.type == pygame.K_SPACE:
-                    current_speed = 0
+            
+            var keys = pygame.key.get_pressed()
+            if keys[pygame.K_UP]:
+                current_speed = 0
+            elif keys[pygame.K_DOWN]:
+                current_speed = replay_speed * 4
+            else:
+                current_speed = replay_speed
                 
             self.screen.fill((0, 0, 0))
             var net_score = self.snake.score - starting_score
             self.snake.update(self.screen, self.food_array[net_score], self.stats)
             self.draw_all_food(self.food_array[0:net_score+1])
+            self.draw_fitness()
             pygame.display.update()
             sleep(current_speed)
 
+    fn reset(inout self):
+        var preserved_fitness = self.snake.fitness
         self.snake.reset()
-        self.snake.fitness = fitness_preserved
+        self.snake.fitness = preserved_fitness
 
     fn draw_all_food(inout self, food_array: List[Vector2D]) raises:
         Self.draw_food(self.screen, food_array[-1], (0, 200, 0))
@@ -55,6 +64,13 @@ struct PopulationPlayback[snake_count: Int, mutation_rate: Float32]:
         var food_x = position[0] + game_width_offset
         var food_y = position[1] + game_height_offset
         pygame.draw.rect(screen, color, (int(food_x) * game_scale, int(food_y) * game_scale, game_scale, game_scale))
+
+    fn draw_fitness(inout self) raises:
+        var pygame = Python.import_module("pygame")
+        var font = pygame.font.Font(None, 36)
+        var text = font.render("Fitness: " + str(self.snake.fitness), True, (255, 255, 255))
+        self.screen.blit(text, (game_scale, game_scale))
+
 
     fn save(inout self) raises:
         var tensor = Tensor[dtype](len(self.food_array), 2)
@@ -81,23 +97,3 @@ struct PopulationPlayback[snake_count: Int, mutation_rate: Float32]:
             var value_y = tensor.__getitem__(index_y)
             self.food_array.append(Vector2D(value_x, value_y))
         self.snake.neural_network.load()
-    
-fn main() raises:
-
-    var population = Population[snake_count=30, mutation_rate=0.1]()
-
-    while population.active:
-        population.update_habitat()
-
-    var playback = PopulationPlayback[snake_count=30, mutation_rate=0.1](population.best_snake.snake, List[Vector2D](Vector2D(2, 3), Vector2D(10, -5), Vector2D(-13, 12), Vector2D(10, 10)), population.stats, population.screen)
-    try:
-        playback.load()
-        playback.replay(0.1)
-    except:
-        pass
-
-    
-    
-    playback.save()
-
-    population^

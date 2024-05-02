@@ -11,7 +11,7 @@ from collections.vector import InlinedFixedVector
 from logger import Logger
 from time import sleep
 from buffer import Buffer
-from playback import PopulationPlayback
+from snake_handler import SnakeHandler
 
 alias dtype = DType.float32
 alias neural_network_spec = List[Int](10, 20, 20, 3)
@@ -37,7 +37,7 @@ struct Population[snake_count: Int, mutation_rate: Float32]:
     var stats: PopulationStats
     var screen: PythonObject
     var logger: Logger
-    var best_snake: PopulationPlayback[snake_count, mutation_rate]
+    var best_snake: SnakeHandler[snake_count, mutation_rate]
     var replay_active: Bool
 
     fn __init__(inout self) raises:
@@ -56,7 +56,7 @@ struct Population[snake_count: Int, mutation_rate: Float32]:
         self.stats["best"] = 0
         self.logger = Logger("logs")
         self.replay_active = False
-        self.best_snake = PopulationPlayback[snake_count, mutation_rate](Snake(), self.food_array, self.stats, self.screen)
+        self.best_snake = SnakeHandler[snake_count, mutation_rate](Snake(), self.food_array, self.stats, self.screen)
         self.init_habitat(mutation_rate)
         
 
@@ -79,8 +79,11 @@ struct Population[snake_count: Int, mutation_rate: Float32]:
             self.habitat[id] = Snake()
         try:
             self.best_snake.load()
-            self.best_snake.replay(0.001)
+            self.log_stats(self.stats)
+            self.best_snake.replay(0.1)
+            self.stats["best"] = self.best_snake.snake.fitness
             self.load(mutation_rate)
+            
             
         except:
             self.logger.warn("No serialized data found. Starting new population.")
@@ -160,21 +163,25 @@ struct Population[snake_count: Int, mutation_rate: Float32]:
         return max_fitness_value, max_fitness_index, fitness_sum / snake_count
 
     fn set_best_snake(inout self, new_value: Int, new_index: Int) raises:
-        if new_value >= self.best_snake.snake.fitness:
+        var previous_stats = self.stats
+        if new_value > int(previous_stats["best"]):
             self.save()
             var snake = Snake()
             snake.fitness = new_value
             snake.neural_network.copy(self.habitat[new_index].neural_network)
-            self.best_snake = PopulationPlayback[snake_count, mutation_rate](snake, self.food_array, self.stats, self.screen)
+            self.stats["best"] = new_value
+            self.best_snake = SnakeHandler[snake_count, mutation_rate](snake, self.food_array, self.stats, self.screen)
+            self.log_stats(previous_stats)
+            self.logger.notice("New best snake found with fitness " + str(new_value) + "! Replay requested")
             self.replay_active = True
         else:
             self.habitat[new_index].neural_network.copy(self.best_snake.snake.neural_network)
 
         if self.replay_active:
+            self.logger.notice("Replay started")
             self.best_snake.replay(0.1)
+            self.best_snake.snake.fitness = int(self.stats["best"])
             self.replay_active = False
-
-        self.best_snake.snake.reset()
 
         
 
@@ -220,8 +227,10 @@ struct Population[snake_count: Int, mutation_rate: Float32]:
 
     fn save(inout self) raises:
         self.best_snake.save()
-        var filename_prefix = "data/" + str(self.habitat[0].neural_network.__repr__())
-        self.logger.notice("Population data serialized as " + filename_prefix + "-#")
+        var neural_network_filename_prefix = "data/" + str(self.habitat[0].neural_network.__repr__())
+        var checkpoint_filename_prefix = "checkpoints/" + str(self.habitat[0].neural_network.__repr__())
+        self.logger.notice("NeuralNetwork data serialized at " + neural_network_filename_prefix + "-#")
+        self.logger.notice("SnakeHandler data serialized at " + checkpoint_filename_prefix)
 
     fn wait_for_save(inout self) raises:
         var input = Python.import_module("builtins").input
@@ -239,4 +248,4 @@ struct Population[snake_count: Int, mutation_rate: Float32]:
             self.habitat[habitat_index].neural_network.mutate(mutation_rate)
 
         var filename_prefix = "data/" + str(self.habitat[0].neural_network.__repr__())
-        self.logger.notice("Population data deserialized from " + filename_prefix + "-#")
+        self.logger.notice("NeuralNetwork data deserialized from " + filename_prefix + "-#")
