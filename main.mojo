@@ -1,14 +1,11 @@
 from python import Python
-from population import Population, game_width, game_height, game_scale
+from population import Population
 from logger import Logger
 from time import sleep
 
-alias snake_count: Int = 50
-alias mutation_rate: Float32 = 0.8
-
 fn main() raises:
     var pygame = Python.import_module("pygame")
-    var population = Population[snake_count, mutation_rate]()
+    var population = Population()
     var run = True
     while run:
         while population.active and run:

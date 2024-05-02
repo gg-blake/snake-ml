@@ -2,7 +2,7 @@ from python import Python
 from tensor import Tensor, TensorSpec, TensorShape
 from collections.vector import InlinedFixedVector
 
-
+# Type aliases
 alias NeuralNetworkShape = VariadicList[Int]
 alias NeuralNetworkSpec = Tuple[DType, NeuralNetworkShape]
 

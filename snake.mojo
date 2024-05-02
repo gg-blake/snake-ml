@@ -1,5 +1,5 @@
 from python import Python
-from population import SPEC, Vector2D, VectorComponent, dtype, neural_network_spec, game_width, game_width_offset, game_height, game_height_offset, starting_score, game_scale, ttl
+from population import Vector2D, VectorComponent, DTYPE, GAME_WIDTH_OFFSET, GAME_HEIGHT_OFFSET, INITIAL_SCORE, GAME_SCALE, TTL, SPEC
 from neural_network import NeuralNetwork
 from math import abs, sqrt, clamp
 from tensor import Tensor, TensorSpec
@@ -19,10 +19,10 @@ struct Snake(Hashable):
         self.position = Vector2D(0, 0)
         self.direction = Vector2D(-1, 0)
         self.neural_network = NeuralNetwork[SPEC]()
-        self.score = starting_score
+        self.score = INITIAL_SCORE
         self.min_dist = 0
         self.history = List[Vector2D]()
-        self.fitness = ttl
+        self.fitness = TTL
         for i in range(self.score):
             self.history.append(self.position + Vector2D(self.score - i - 1, 0))
 
@@ -31,10 +31,10 @@ struct Snake(Hashable):
         self.position = Vector2D(0, 0)
         self.direction = Vector2D(-1, 0)
         self.neural_network = neural_network
-        self.score = starting_score
+        self.score = INITIAL_SCORE
         self.min_dist = 0
         self.history = List[Vector2D]()
-        self.fitness = ttl
+        self.fitness = TTL
         for i in range(self.score):
             self.history.append(self.position + Vector2D(self.score - i - 1, 0))
         
@@ -67,10 +67,10 @@ struct Snake(Hashable):
     fn reset(inout self):
         self.position = Vector2D(0, 0)
         self.direction = Vector2D(-1, 0)
-        self.score = starting_score
+        self.score = INITIAL_SCORE
         self.min_dist = 0
         self.history = List[Vector2D]()
-        self.fitness = ttl
+        self.fitness = TTL
         for i in range(self.score):
             self.history.append(self.position + Vector2D(self.score - i - 1, 0))
 
@@ -169,7 +169,7 @@ struct Snake(Hashable):
 
     @staticmethod
     fn in_bounds(position: Vector2D) -> SIMD[DType.bool, 1]:
-        return position[0] >= -game_width_offset and position[0] < game_width_offset  and position[1] >= -game_height_offset and position[1] < game_height_offset 
+        return position[0] >= -GAME_WIDTH_OFFSET and position[0] < GAME_WIDTH_OFFSET  and position[1] >= -GAME_HEIGHT_OFFSET and position[1] < GAME_HEIGHT_OFFSET 
 
     @staticmethod
     fn distance(point_a: Vector2D, point_b: Vector2D) -> VectorComponent:
@@ -179,7 +179,7 @@ struct Snake(Hashable):
         var next_position = self.position + self.direction
         # Death detection
         var active_death = next_position in self or not Snake.in_bounds(self.position)
-        var passive_death = self.fitness <= (self.score - starting_score) * ttl
+        var passive_death = self.fitness <= (self.score - INITIAL_SCORE) * TTL
         if active_death or passive_death:
             # Active death: If the snake hits the game bounds or tail
             self.direction = Vector2D.splat(0)
@@ -188,14 +188,14 @@ struct Snake(Hashable):
         # Food detection
         if next_position == fruit_position:
             self.score += 1
-            self.fitness = (self.score - starting_score + 1) * ttl - (ttl // 2)
+            self.fitness = (self.score - INITIAL_SCORE + 1) * TTL - (TTL // 2)
         else:
             var current_distance = Self.distance(self.position, fruit_position)
             var next_distance = Self.distance(next_position, fruit_position)
             if next_distance < current_distance:
                 self.fitness += 1
             else:
-                self.fitness -= 5
+                self.fitness -= 2
 
         self.position = next_position
         self.history.append(self.position)
@@ -211,14 +211,16 @@ struct Snake(Hashable):
         var color = (200, 30, 30)
         for b in self.history:
             var body_part = b[]
-            var x_position = body_part[0].to_int() + game_width_offset
-            var y_position = body_part[1].to_int() + game_width_offset
-            var rect = (x_position * game_scale, y_position * game_scale, game_scale, game_scale)
+            var x_position = body_part[0].to_int() + GAME_WIDTH_OFFSET
+            var y_position = body_part[1].to_int() + GAME_WIDTH_OFFSET
+            var rect = (x_position * GAME_SCALE, y_position * GAME_SCALE, GAME_SCALE, GAME_SCALE)
             var weight = clamp(self.fitness / best_fitness * 200, 0, 200).to_int()
             var body_part_color = (200 - weight, weight, 20)
+            if self.fitness > best_fitness:
+                body_part_color = (255, 187, 0)
             pygame.draw.rect(screen, body_part_color, rect)
             if count == self.score - 1:
                 var text_surface = font.render(str(self.fitness), False, (255, 255, 255))
-                screen.blit(text_surface, (x_position * game_scale - game_scale, y_position * game_scale))
+                screen.blit(text_surface, (x_position * GAME_SCALE - GAME_SCALE, y_position * GAME_SCALE))
                 
             count += 1
