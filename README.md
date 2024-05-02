@@ -6,15 +6,20 @@ Simulating and facilitating an automated bot to play snake, training a deep lear
 ## Development Setup
 ### Requirements
 **OS:** Ubuntu 22.04 x86-64 (native or WSL)
-**Software:** Mojo SDK
-**Python Dependencies:** Can be found in `requirements.txt`
+**Software:** Mojo SDK, Python 3.10, Docker (Optional)
+**Python Dependencies:** pygame, torch, termcolor
 
-## Release Installation and Usage
-### Requirements
-**OS:** Ubuntu 22.04 x86-64 (native or WSL)
-### Setup Guide
-1. Download the latest release [here](https://github.com/gg-blake/SnakeGameMachineLearning/releases)
-2. Unzip the file and open a console window there.
-3. Give the executable execute permissions with `chmod +x main`
-4. Run the executable by typing `./main`
-5. Stop the program by closing the game window (**do not CTRL+C if you want to save the simulation**)
+### Docker Setup Guide
+1. Pull the docker image to your local machine with `docker pull ghcr.io/gg-blake/snake-ml-dev:latest`
+2. After running the container, clone the repo
+3. To run the program, type `mojo main.mojo`
+4. To build an executable, type `mojo build main.mojo` then to run type `./main`
+
+### Pip Setup Guide
+1. Install Python 3.10
+2. Follow the instructions to install mojo on Modular's website
+3. Set the libpython path with the command `export MOJO_PYTHON_LIBRARY=$(modular config mojo.python_lib)`
+4. Clone the repo
+5. Install the python dependencies by issuing the command `pip install -r requirements.txt`, or pip installing pygame, termcolor, and torch individually
+6. To run the program, type `mojo main.mojo`
+7. To build an executable, type `mojo build main.mojo` then to run type `./main`
