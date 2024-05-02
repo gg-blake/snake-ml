@@ -38,6 +38,7 @@ struct Population[snake_count: Int, mutation_rate: Float32]:
     var screen: PythonObject
     var logger: Logger
     var best_snake: PopulationPlayback[snake_count, mutation_rate]
+    var replay_active: Bool
 
     fn __init__(inout self) raises:
         var pygame = Python.import_module("pygame")
@@ -54,6 +55,7 @@ struct Population[snake_count: Int, mutation_rate: Float32]:
         self.stats["average"] = 0
         self.stats["best"] = 0
         self.logger = Logger("logs")
+        self.replay_active = False
         self.best_snake = PopulationPlayback[snake_count, mutation_rate](Snake(), self.food_array, self.stats, self.screen)
         self.init_habitat(mutation_rate)
         
@@ -76,7 +78,10 @@ struct Population[snake_count: Int, mutation_rate: Float32]:
         for id in range(snake_count):
             self.habitat[id] = Snake()
         try:
+            self.best_snake.load()
+            self.best_snake.replay(0.001)
             self.load(mutation_rate)
+            
         except:
             self.logger.warn("No serialized data found. Starting new population.")
 
@@ -161,9 +166,17 @@ struct Population[snake_count: Int, mutation_rate: Float32]:
             snake.fitness = new_value
             snake.neural_network.copy(self.habitat[new_index].neural_network)
             self.best_snake = PopulationPlayback[snake_count, mutation_rate](snake, self.food_array, self.stats, self.screen)
-            self.best_snake.replay(0.02)
+            self.replay_active = True
         else:
             self.habitat[new_index].neural_network.copy(self.best_snake.snake.neural_network)
+
+        if self.replay_active:
+            self.best_snake.replay(0.1)
+            self.replay_active = False
+
+        self.best_snake.snake.reset()
+
+        
 
     fn mutate_population(inout self, max_index: Int, parent_traits: NeuralNetwork[SPEC]) raises:
         for index in range(snake_count):
@@ -206,9 +219,7 @@ struct Population[snake_count: Int, mutation_rate: Float32]:
         pygame.draw.rect(screen, color, (int(food_x) * game_scale, int(food_y) * game_scale, game_scale, game_scale))
 
     fn save(inout self) raises:
-        for habitat_index in range(snake_count):
-            self.best_snake.snake.neural_network.save()
-
+        self.best_snake.save()
         var filename_prefix = "data/" + str(self.habitat[0].neural_network.__repr__())
         self.logger.notice("Population data serialized as " + filename_prefix + "-#")
 
@@ -223,9 +234,8 @@ struct Population[snake_count: Int, mutation_rate: Float32]:
         self.save()
 
     fn load(inout self, mutation_rate: Float32) raises:
-        self.habitat[0].neural_network.load()
         for habitat_index in range(1, snake_count):
-            self.habitat[habitat_index].neural_network.copy(self.habitat[0].neural_network)
+            self.habitat[habitat_index].neural_network.copy(self.best_snake.snake.neural_network)
             self.habitat[habitat_index].neural_network.mutate(mutation_rate)
 
         var filename_prefix = "data/" + str(self.habitat[0].neural_network.__repr__())

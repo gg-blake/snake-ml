@@ -16,6 +16,9 @@ fn main() raises:
             for event in events:
                 if event.type == pygame.QUIT:
                     run = False
+                elif event.type == pygame.KEYDOWN and event.type == pygame.K_SPACE:
+                    population.logger.notice("Replay requested")
+                    population.replay_active = True
 
             population.update_habitat()
         population.generate_next_habitat()
