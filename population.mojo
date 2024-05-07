@@ -1,7 +1,7 @@
 from python import Python
 from snake import Snake
 from neural_network import NeuralNetwork, NeuralNetworkSpec, NeuralNetworkShape
-from math import sqrt, abs
+from math import sqrt, abs, clamp
 from tensor import Tensor
 from collections.vector import InlinedFixedVector
 from logger import Logger
@@ -237,7 +237,10 @@ struct Population:
         var pygame = Python.import_module("pygame")
         var food_x = position[0] + GAME_WIDTH_OFFSET
         var food_y = position[1] + GAME_HEIGHT_OFFSET
-        pygame.draw.rect(screen, color, (int(food_x) * GAME_SCALE, int(food_y) * GAME_SCALE, GAME_SCALE, GAME_SCALE))
+        var food_z = position[2] + GAME_DEPTH_OFFSET
+        var food_z_scaled = int(clamp(food_z / GAME_DEPTH, 0, 1))
+        var weighted_color = (color.get[0, Int]() * food_z_scaled, color.get[1, Int]() * food_z_scaled, color.get[2, Int]() * food_z_scaled)
+        pygame.draw.rect(screen, weighted_color, (int(food_x) * GAME_SCALE, int(food_y) * GAME_SCALE, GAME_SCALE, GAME_SCALE))
 
     fn save(inout self) raises:
         self.best_snake.save()
