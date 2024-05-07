@@ -271,7 +271,7 @@ struct Snake(Hashable):
 
     @staticmethod
     fn distance(point_a: Vector3D, point_b: Vector3D) -> Vector1D:
-        return sqrt((point_a[0] - point_b[0])**2 + (point_a[1] - point_b[1])**2)
+        return sqrt((point_a[0] - point_b[0])**2 + (point_a[1] - point_b[1])**2 + (point_a[2] - point_b[2])**2)
 
     fn move(inout self, fruit_position: Vector3D):
         var next_position = self.position + self.direction
