@@ -1,10 +1,11 @@
 from python import Python
-from population import Vector3D, Vector1D, DTYPE, GAME_WIDTH_OFFSET, GAME_HEIGHT_OFFSET, INITIAL_SCORE, GAME_SCALE, TTL, SPEC
+from population import Vector3D, Vector1D, DTYPE, GAME_WIDTH_OFFSET, GAME_HEIGHT_OFFSET, GAME_DEPTH_OFFSET, INITIAL_SCORE, GAME_SCALE, TTL, SPEC
 from neural_network import NeuralNetwork
 from math import abs, sqrt, clamp
 from tensor import Tensor, TensorSpec
 from logger import Logger
 
+# Cardinal directions in 3d: north (y+), south (y-), east (right/+x), west (left/-x), zenith (up/-z), nadir (down/+z), [4D: ana, kata]
 
 struct Snake(Hashable):
     var position: Vector3D
@@ -16,27 +17,27 @@ struct Snake(Hashable):
     var fitness: Vector1D
 
     fn __init__(inout self) raises:
-        self.position = Vector3D(0, 0)
-        self.direction = Vector3D(-1, 0)
+        self.position = Vector3D(0, 0, 0)
+        self.direction = Vector3D(-1, 0, 0) # Starts facing left
         self.neural_network = NeuralNetwork[SPEC]()
         self.score = INITIAL_SCORE
         self.min_dist = 0
         self.history = List[Vector3D]()
         self.fitness = TTL
         for i in range(self.score):
-            self.history.append(self.position + Vector3D(self.score - i - 1, 0))
+            self.history.append(self.position + Vector3D(self.score - i - 1, 0, 0))
 
     # Make a Snake instance and transfer ownership of NeuralNetwork
     fn __init__(inout self, owned neural_network: NeuralNetwork[SPEC]):
-        self.position = Vector3D(0, 0)
-        self.direction = Vector3D(-1, 0)
+        self.position = Vector3D(0, 0 , 0)
+        self.direction = Vector3D(-1, 0, 0)
         self.neural_network = neural_network
         self.score = INITIAL_SCORE
         self.min_dist = 0
         self.history = List[Vector3D]()
         self.fitness = TTL
         for i in range(self.score):
-            self.history.append(self.position + Vector3D(self.score - i - 1, 0))
+            self.history.append(self.position + Vector3D(self.score - i - 1, 0, 0))
         
     fn __moveinit__(inout self, owned existing: Self):
         self = Self(existing.neural_network)
@@ -65,17 +66,17 @@ struct Snake(Hashable):
         self.neural_network^.__del__()
 
     fn reset(inout self):
-        self.position = Vector3D(0, 0)
-        self.direction = Vector3D(-1, 0)
+        self.position = Vector3D(0, 0, 0)
+        self.direction = Vector3D(-1, 0, 0)
         self.score = INITIAL_SCORE
         self.min_dist = 0
         self.history = List[Vector3D]()
         self.fitness = TTL
         for i in range(self.score):
-            self.history.append(self.position + Vector3D(self.score - i - 1, 0))
+            self.history.append(self.position + Vector3D(self.score - i - 1, 0, 0))
 
     fn is_dead(self) -> Bool:
-        return self.direction[0].to_int() == 0 and self.direction[1].to_int() == 0
+        return self.direction[0].to_int() == 0 and self.direction[1].to_int() == 0 and self.direction[2].to_int() == 0
 
     fn update(inout self, screen: PythonObject, fruit_position: Vector3D, stats: Dict[String, Float32]) raises:
         if self.is_dead():
@@ -84,48 +85,73 @@ struct Snake(Hashable):
         var torch = Python.import_module("torch")
         var pygame = Python.import_module("pygame")
 
-        var fruit_left = (fruit_position < self.position)[0].to_int()
-        var fruit_right = (fruit_position > self.position)[0].to_int()
-        var fruit_top = (fruit_position < self.position)[1].to_int()
-        var fruit_bottom = (fruit_position > self.position)[1].to_int()
+        # Absolute directions for fruit
+        var fruit_west = (fruit_position < self.position)[0].to_int()
+        var fruit_east = (fruit_position > self.position)[0].to_int()
+        var fruit_north = (fruit_position < self.position)[1].to_int()
+        var fruit_south = (fruit_position > self.position)[1].to_int()
+        var fruit_zenith = (fruit_position < self.position)[2].to_int()
+        var fruit_nadir = (fruit_position > self.position)[2].to_int()
         
-        var wall_left = ~Snake.in_bounds(self.position + Vector3D(-1, 0)).to_int()
-        var wall_right = ~Snake.in_bounds(self.position + Vector3D(1, 0)).to_int()
-        var wall_top = ~Snake.in_bounds(self.position + Vector3D(0, -1)).to_int()
-        var wall_bottom = ~Snake.in_bounds(self.position + Vector3D(0, 1)).to_int()
+        # Absolute directions for walls
+        var wall_west = ~Snake.in_bounds(self.position + Vector3D(-1, 0, 0)).to_int()
+        var wall_east = ~Snake.in_bounds(self.position + Vector3D(1, 0, 0)).to_int()
+        var wall_north = ~Snake.in_bounds(self.position + Vector3D(0, -1, 0)).to_int()
+        var wall_south = ~Snake.in_bounds(self.position + Vector3D(0, 1, 0)).to_int()
+        var wall_zenith = ~Snake.in_bounds(self.position + Vector3D(0, 0, -1)).to_int()
+        var wall_nadir = ~Snake.in_bounds(self.position + Vector3D(0, 0, 1)).to_int()
 
-        var body_left = (self.position + Vector3D(-1, 0) in self).to_int()
-        var body_right = (self.position + Vector3D(1, 0) in self).to_int()
-        var body_top = (self.position + Vector3D(0, -1) in self).to_int()
-        var body_bottom = (self.position + Vector3D(0, 1) in self).to_int()
+        # Absolute directions for body
+        var body_west = (self.position + Vector3D(-1, 0, 0) in self).to_int()
+        var body_east = (self.position + Vector3D(1, 0, 0) in self).to_int()
+        var body_north = (self.position + Vector3D(0, -1, 0) in self).to_int()
+        var body_south = (self.position + Vector3D(0, 1, 0) in self).to_int()
+        var body_zenith = (self.position + Vector3D(0, 0, -1) in self).to_int()
+        var body_nadir = (self.position + Vector3D(0, 0, 1) in self).to_int()
 
-        var facing_left = (self.direction[0] == -1).to_int()
-        var facing_right = (self.direction[0] == 1).to_int()
-        var facing_top = (self.direction[1] == -1).to_int()
-        var facing_bottom = (self.direction[1] == 1).to_int()
+        # Absolute directions
+        var facing_west = (self.direction[0] == -1).to_int()
+        var facing_east = (self.direction[0] == 1).to_int()
+        var facing_north = (self.direction[1] == -1).to_int()
+        var facing_south = (self.direction[1] == 1).to_int()
+        var facing_zenith = (self.direction[2] == -1).to_int()
+        var facing_nadir = (self.direction[2] == 1).to_int()
 
-        var fruit_ahead = (fruit_left and facing_left) or (fruit_right and facing_right) or (fruit_top and facing_top) or (fruit_bottom and facing_bottom)
-        var fruit_left_side = (fruit_left and facing_top) or (fruit_right and facing_bottom) or (fruit_top and facing_right) or (fruit_bottom and facing_left)
-        var fruit_right_side = (fruit_left and facing_bottom) or (fruit_right and facing_top) or (fruit_top and facing_left) or (fruit_bottom and facing_right)
-        var fruit_behind = SIMD[DType.bool, 1]((not fruit_ahead) and (not fruit_left) and (not fruit_right)).to_int()
-        var wall_ahead = Self.in_bounds(self.position + self.direction).to_int()
-        var wall_left_side = (wall_left and facing_top) or (wall_right and facing_bottom) or (wall_top and facing_right) or (wall_bottom and facing_left)
-        var wall_right_side = (wall_left and facing_bottom) or (wall_right and facing_top) or (wall_top and facing_left) or (wall_bottom and facing_right)
-        var body_ahead = (body_left and facing_left) or (body_right and facing_right) or (body_top and facing_top) or (body_bottom and facing_bottom)
-        var body_left_side = (body_left and facing_top) or (body_right and facing_bottom) or (body_top and facing_right) or (body_bottom and facing_left)
-        var body_right_side = (body_left and facing_bottom) or (body_right and facing_top) or (body_top and facing_left) or (body_bottom and facing_right)
+        # Relative directions for fruit
+        var relative_fruit_front = (fruit_north and facing_north) or (fruit_south and facing_south) or (fruit_east and facing_east) or (fruit_west and facing_west) or (fruit_zenith and facing_zenith) or (fruit_nadir and facing_nadir)
+        var relative_fruit_left = (fruit_north and facing_west) or (fruit_south and facing_east) or (fruit_east and facing_north) or (fruit_west and facing_south) or (fruit_west and facing_zenith) or (fruit_east and facing_nadir)
+        var relative_fruit_right = (fruit_north and facing_east) or (fruit_south and facing_west) or (fruit_east and facing_south) or (fruit_west and facing_north) or (fruit_east and facing_zenith) or (fruit_west and facing_nadir)
+        var relative_fruit_above = (fruit_north and facing_zenith) or (fruit_south and facing_nadir) or (fruit_zenith and facing_south) or (fruit_nadir and facing_north) or (fruit_east and facing_zenith) or (fruit_west and facing_nadir)
+        var relative_fruit_below = (fruit_north and facing_nadir) or (fruit_south and facing_zenith) or (fruit_zenith and facing_north) or (fruit_nadir and facing_south) or (fruit_east and facing_nadir) or (fruit_west and facing_zenith)
+        var relative_fruit_behind = SIMD[DType.bool]((not relative_fruit_front) and (not relative_fruit_left) and (not relative_fruit_right) and (not relative_fruit_above) and (not relative_fruit_below)).to_int()
+        
 
-        var no_body_fruit_ahead = fruit_ahead and not body_ahead
-        var no_body_fruit_left_side = fruit_left_side and not body_left_side
-        var no_body_fruit_right_side = fruit_right_side and not body_right_side
-
-        var no_body_left_fruit_behind = fruit_behind and not body_left_side
-        var no_body_right_fruit_behind = fruit_behind and not body_right_side
+        # Relative directions for walls
+        var relative_wall_front = int(Self.in_bounds(self.position + self.direction))
+        var relative_wall_left = (wall_north and facing_west) or (wall_south and facing_east) or (wall_east and facing_north) or (wall_west and facing_south) or (wall_west and facing_zenith) or (wall_east and facing_nadir)
+        var relative_wall_right = (wall_north and facing_east) or (wall_south and facing_west) or (wall_east and facing_south) or (wall_west and facing_north) or (wall_east and facing_zenith) or (wall_west and facing_nadir)
+        var relative_wall_above = (wall_north and facing_zenith) or (wall_south and facing_nadir) or (wall_zenith and facing_south) or (wall_nadir and facing_north) or (wall_east and facing_zenith) or (wall_west and facing_nadir)
+        var relative_wall_below = (wall_north and facing_nadir) or (wall_south and facing_zenith) or (wall_zenith and facing_north) or (wall_nadir and facing_south) or (wall_east and facing_nadir) or (wall_west and facing_zenith)
+        
+        # Relative directions for body
+        var relative_body_front = int((self.position + self.direction) in self)
+        var relative_body_left = (body_north and facing_west) or (body_south and facing_east) or (body_east and facing_north) or (body_west and facing_south) or (body_west and facing_zenith) or (body_east and facing_nadir)
+        var relative_body_right = (body_north and facing_east) or (body_south and facing_west) or (body_east and facing_south) or (body_west and facing_north) or (body_east and facing_zenith) or (body_west and facing_nadir)
+        var relative_body_above = (body_north and facing_zenith) or (body_south and facing_nadir) or (body_zenith and facing_south) or (body_nadir and facing_north) or (body_east and facing_zenith) or (body_west and facing_nadir)
+        var relative_body_below = (body_north and facing_nadir) or (body_south and facing_zenith) or (body_zenith and facing_north) or (body_nadir and facing_south) or (body_east and facing_nadir) or (body_west and facing_zenith)
+        
+        # Body and fruit relative comparisons
+        relative_fruit_front = ~relative_body_front and relative_fruit_front
+        relative_fruit_left = ~relative_body_left and relative_fruit_left
+        relative_fruit_right = ~relative_body_right and relative_fruit_right
+        relative_fruit_above = ~relative_body_above and relative_fruit_above
+        relative_fruit_below = ~relative_body_below and relative_fruit_below
+        
 
         var input = torch.tensor([
-            body_ahead, body_left_side, body_right_side,
-            no_body_fruit_ahead, no_body_fruit_left_side, no_body_fruit_right_side, no_body_left_fruit_behind, no_body_right_fruit_behind,
-            wall_ahead, wall_left_side, wall_right_side
+            relative_fruit_front, relative_fruit_left, relative_fruit_right, relative_fruit_above, relative_fruit_below,
+            relative_wall_front, relative_wall_left, relative_wall_right, relative_wall_above, relative_wall_below,
+            relative_body_front, relative_body_left, relative_body_right, relative_body_above, relative_body_below
         ]).to(torch.float32).unsqueeze(1)
 
         var output = self.neural_network.feed(input)

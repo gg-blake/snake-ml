@@ -12,8 +12,10 @@ from snake_handler import SnakeHandler
 # Screen constants
 alias GAME_WIDTH: Int = 40
 alias GAME_HEIGHT: Int = 40
+alias GAME_DEPTH: Int = 40
 alias GAME_WIDTH_OFFSET: Int = GAME_WIDTH // 2
 alias GAME_HEIGHT_OFFSET: Int = GAME_HEIGHT // 2
+alias GAME_DEPTH_OFFSET: Int = GAME_DEPTH // 2
 alias GAME_SCALE: Int = 26
 
 # Neural network constants
