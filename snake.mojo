@@ -10,6 +10,7 @@ from logger import Logger
 struct Snake(Hashable):
     var position: Vector3D
     var direction: Vector3D
+    var direction_id: Int
     var score: Int
     var min_dist: Vector1D
     var neural_network: NeuralNetwork[SPEC]
@@ -19,6 +20,7 @@ struct Snake(Hashable):
     fn __init__(inout self) raises:
         self.position = Vector3D(0, 0, 0)
         self.direction = Vector3D(-1, 0, 0) # Starts facing left
+        self.direction_id = 0
         self.neural_network = NeuralNetwork[SPEC]()
         self.score = INITIAL_SCORE
         self.min_dist = 0
@@ -31,6 +33,7 @@ struct Snake(Hashable):
     fn __init__(inout self, owned neural_network: NeuralNetwork[SPEC]):
         self.position = Vector3D(0, 0 , 0)
         self.direction = Vector3D(-1, 0, 0)
+        self.direction_id = 0
         self.neural_network = neural_network
         self.score = INITIAL_SCORE
         self.min_dist = 0
@@ -68,6 +71,7 @@ struct Snake(Hashable):
     fn reset(inout self):
         self.position = Vector3D(0, 0, 0)
         self.direction = Vector3D(-1, 0, 0)
+        self.direction_id = 0
         self.score = INITIAL_SCORE
         self.min_dist = 0
         self.history = List[Vector3D]()
@@ -160,40 +164,105 @@ struct Snake(Hashable):
         var indices: PythonObject
         output = torch.argmax(output)
 
-        var direction_num = 0
-        if Vector3D(0, -1) == self.direction:
-            direction_num = 0
-        elif Vector3D(1, 0) == self.direction:
-            direction_num = 1
-        elif Vector3D(0, 1) == self.direction:
-            direction_num = 2
-        elif Vector3D(-1, 0) == self.direction:
-            direction_num = 3
+        var direction_xy = 0
+        var direction_xz = 0
+        var direction_yz = 0
+
+        var direction_map_xy = List[Int](0, 1, 2, 3)
+        var direction_map_xz = List[Int](0, 5, 2, 4)
+        var direction_map_yz = List[Int](1, 5, 3, 4)
+
+        var current_direction = 0
+
+        fn index(l: List[Int], v: Int) -> Int:
+            for i in range(len(l)):
+                if l[i] == v:
+                    return i
+            return -1
+
+        if self.direction == Vector3D(-1, 0, 0):
+            direction_xy = 0
+            direction_xz = 0
+            direction_yz = -1
+        elif self.direction == Vector3D(1, 0, 0):
+            direction_xy = 2
+            direction_xz = 2
+            direction_yz = -1
+        elif self.direction == Vector3D(0, -1, 0):
+            direction_xy = 3
+            direction_xz = -1
+            direction_yz = 2
+        elif self.direction == Vector3D(0, 1, 0):
+            direction_xy = 1
+            direction_xz = -1
+            direction_yz = 0
+        elif self.direction == Vector3D(0, 0, -1):
+            direction_xy = -1
+            direction_xz = 3
+            direction_yz = 3
+        elif self.direction == Vector3D(0, 0, 1):
+            direction_xy = -1
+            direction_xz = 1
+            direction_yz = 1
+
+        var left_right_index = 0
+        var left_right_list = List[Int](0, 0, 0, 0)
+        var up_down_index = 0
+        var up_down_list = List[Int](0, 0, 0, 0)
+
+        if direction_xy == -1:
+            left_right_index = direction_xz
+            left_right_list = direction_map_xz
+            up_down_index = direction_yz
+            up_down_list = direction_map_yz
+        elif direction_xz == -1:
+            left_right_index = direction_xy
+            left_right_list = direction_map_xy
+            up_down_index = direction_yz
+            up_down_list = direction_map_yz
+        elif direction_yz == -1:
+            left_right_index = direction_xy
+            left_right_list = direction_map_xy
+            up_down_index = direction_xz
+            up_down_list = direction_map_xz
 
         if output == 0:
-            # left turn
-            direction_num += 1
+            left_right_index += 1
+            if left_right_index == 4:
+                left_right_index = 0
+            current_direction = left_right_list[left_right_index]
         elif output == 1:
-            # right turn
-            direction_num -= 1
-        
-        if direction_num < 0:
-            direction_num = 3
-        elif direction_num > 3:
-            direction_num = 0
+            left_right_index -= 1
+            if left_right_index == -1:
+                left_right_index = 3
+            current_direction = left_right_list[left_right_index]
+        elif output == 2:
+            up_down_index += 1
+            if up_down_index == 4:
+                up_down_index = 0
+            current_direction = up_down_list[up_down_index]
+        elif output == 3:
+            up_down_index -= 1
+            if up_down_index == -1:
+                up_down_index = 3
+            current_direction = up_down_list[up_down_index]
+        else:
+            print("Invalid output from neural network")
+            return
 
-        if direction_num == 0:
-            # up
-            self.direction = Vector3D(0, -1)
-        elif direction_num == 1:
-            # right
-            self.direction = Vector3D(1, 0)
-        elif direction_num == 2:
-            # down
-            self.direction = Vector3D(0, 1)
-        elif direction_num == 3:
-            # left
-            self.direction = Vector3D(-1, 0)
+        if current_direction == 0:
+            self.direction = Vector3D(-1, 0, 0)
+        elif current_direction == 1:
+            self.direction = Vector3D(0, 1, 0)
+        elif current_direction == 2:
+            self.direction = Vector3D(1, 0, 0)
+        elif current_direction == 3:
+            self.direction = Vector3D(0, -1, 0)
+        elif current_direction == 4:
+            self.direction = Vector3D(0, 0, -1)
+        elif current_direction == 5:
+            self.direction = Vector3D(0, 0, 1)
+        
 
         var old_fitness = self.fitness
         self.move(fruit_position)
