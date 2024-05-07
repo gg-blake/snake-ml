@@ -1,5 +1,5 @@
 from python import Python
-from population import Vector2D, VectorComponent, DTYPE, GAME_WIDTH_OFFSET, GAME_HEIGHT_OFFSET, INITIAL_SCORE, GAME_SCALE, TTL, SPEC
+from population import Vector2D, Vector1D, DTYPE, GAME_WIDTH_OFFSET, GAME_HEIGHT_OFFSET, INITIAL_SCORE, GAME_SCALE, TTL, SPEC
 from neural_network import NeuralNetwork
 from math import abs, sqrt, clamp
 from tensor import Tensor, TensorSpec
@@ -10,10 +10,10 @@ struct Snake(Hashable):
     var position: Vector2D
     var direction: Vector2D
     var score: Int
-    var min_dist: VectorComponent
+    var min_dist: Vector1D
     var neural_network: NeuralNetwork[SPEC]
     var history: List[Vector2D]
-    var fitness: Int
+    var fitness: Vector1D
 
     fn __init__(inout self) raises:
         self.position = Vector2D(0, 0)
@@ -115,9 +115,16 @@ struct Snake(Hashable):
         var body_left_side = (body_left and facing_top) or (body_right and facing_bottom) or (body_top and facing_right) or (body_bottom and facing_left)
         var body_right_side = (body_left and facing_bottom) or (body_right and facing_top) or (body_top and facing_left) or (body_bottom and facing_right)
 
+        var no_body_fruit_ahead = fruit_ahead and not body_ahead
+        var no_body_fruit_left_side = fruit_left_side and not body_left_side
+        var no_body_fruit_right_side = fruit_right_side and not body_right_side
+
+        var no_body_left_fruit_behind = fruit_behind and not body_left_side
+        var no_body_right_fruit_behind = fruit_behind and not body_right_side
+
         var input = torch.tensor([
             body_ahead, body_left_side, body_right_side,
-            fruit_ahead and not body_ahead, fruit_left_side and not body_left_side, fruit_right_side and not body_right_side, fruit_behind,
+            no_body_fruit_ahead, no_body_fruit_left_side, no_body_fruit_right_side, no_body_left_fruit_behind, no_body_right_fruit_behind,
             wall_ahead, wall_left_side, wall_right_side
         ]).to(torch.float32).unsqueeze(1)
 
@@ -164,7 +171,7 @@ struct Snake(Hashable):
 
         var old_fitness = self.fitness
         self.move(fruit_position)
-        self.draw(screen, old_fitness, stats["best_fitness"].to_int())
+        self.draw(screen, old_fitness, stats["best_fitness"])
         #print(self.position)
 
     @staticmethod
@@ -172,7 +179,7 @@ struct Snake(Hashable):
         return position[0] >= -GAME_WIDTH_OFFSET and position[0] < GAME_WIDTH_OFFSET  and position[1] >= -GAME_HEIGHT_OFFSET and position[1] < GAME_HEIGHT_OFFSET 
 
     @staticmethod
-    fn distance(point_a: Vector2D, point_b: Vector2D) -> VectorComponent:
+    fn distance(point_a: Vector2D, point_b: Vector2D) -> Vector1D:
         return sqrt((point_a[0] - point_b[0])**2 + (point_a[1] - point_b[1])**2)
 
     fn move(inout self, fruit_position: Vector2D):
@@ -192,12 +199,10 @@ struct Snake(Hashable):
         else:
             var current_distance = Self.distance(self.position, fruit_position)
             var next_distance = Self.distance(next_position, fruit_position)
-            '''if next_distance < current_distance:
+            if next_distance < current_distance:
                 self.fitness += 1
             else:
-                self.fitness -= 2'''
-
-            self.fitness -= 1
+                self.fitness -= 5
 
         self.position = next_position
         self.history.append(self.position)
@@ -205,7 +210,7 @@ struct Snake(Hashable):
             self.history = self.history[1:]
 
     # Draws visual representation of this Snake object to the running pygame window
-    fn draw(borrowed self, screen: PythonObject, old_fitness: Int, best_fitness: Int) raises:
+    fn draw(borrowed self, screen: PythonObject, old_fitness: Vector1D, best_fitness: Vector1D) raises:
         var pygame = Python.import_module("pygame")
         var font = pygame.font.SysFont('Comic Sans MS', 20)
         # Draw the body

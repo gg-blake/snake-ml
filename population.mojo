@@ -18,18 +18,18 @@ alias GAME_SCALE: Int = 26
 
 # Neural network constants
 alias DTYPE = DType.float32
-alias SHAPE = NeuralNetworkShape(10, 20, 20, 3)
+alias SHAPE = NeuralNetworkShape(11, 20, 20, 3)
 alias SPEC = NeuralNetworkSpec(DTYPE, SHAPE)
 
 # Population constants
 alias INITIAL_SCORE: Int = 5
-alias TTL: Int = 2 * (GAME_WIDTH + GAME_HEIGHT)
+alias TTL: Vector1D = 100
 alias SNAKE_COUNT: Int = 35
 alias MUTATION_RATE: Float32 = 0.5
 
 # Type aliases
 alias Vector2D = SIMD[DTYPE, 2]
-alias VectorComponent = SIMD[DTYPE, 1]
+alias Vector1D = SIMD[DTYPE, 1]
 alias PopulationStats = Dict[String, Scalar[DTYPE]]
 alias RGB = Tuple[Int, Int, Int]
 
@@ -133,9 +133,9 @@ struct Population:
         pygame.display.update()
 
     fn generate_next_habitat(inout self) raises:
-        var max_fitness_value: Int
+        var max_fitness_value: Vector1D
         var max_fitness_index: Int
-        var calculated_average: Float64
+        var calculated_average: Vector1D
         var previous_stats = self.stats
         var parent_traits = NeuralNetwork[SPEC]()
         max_fitness_value, max_fitness_index, calculated_average = self.set_max_fitness()
@@ -161,12 +161,12 @@ struct Population:
 
         self.active = True
 
-    fn set_max_fitness(inout self) -> (Int, Int, Float64):
-        var max_fitness_value = 0
-        var max_fitness_index = 0
-        var fitness_sum = 0
+    fn set_max_fitness(inout self) -> (Vector1D, Int, Vector1D):
+        var max_fitness_value: Vector1D = 0
+        var max_fitness_index: Int = 0
+        var fitness_sum: Vector1D = 0
         for index in range(SNAKE_COUNT):
-            var fitness = self.habitat[index].fitness
+            var fitness: Vector1D = self.habitat[index].fitness
             if self.habitat[index].fitness > max_fitness_value:
                 max_fitness_value = fitness
                 max_fitness_index = index
@@ -174,7 +174,7 @@ struct Population:
 
         return max_fitness_value, max_fitness_index, fitness_sum / SNAKE_COUNT
 
-    fn set_best_snake(inout self, new_value: Int, new_index: Int) raises:
+    fn set_best_snake(inout self, new_value: Vector1D, new_index: Int) raises:
         var previous_stats = self.stats
         if new_value > int(previous_stats["best_fitness"]):
             self.save()
