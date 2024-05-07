@@ -10,7 +10,6 @@ from logger import Logger
 struct Snake(Hashable):
     var position: Vector3D
     var direction: Vector3D
-    var direction_id: Int
     var score: Int
     var min_dist: Vector1D
     var neural_network: NeuralNetwork[SPEC]
@@ -20,7 +19,6 @@ struct Snake(Hashable):
     fn __init__(inout self) raises:
         self.position = Vector3D(0, 0, 0)
         self.direction = Vector3D(-1, 0, 0) # Starts facing left
-        self.direction_id = 0
         self.neural_network = NeuralNetwork[SPEC]()
         self.score = INITIAL_SCORE
         self.min_dist = 0
@@ -33,7 +31,6 @@ struct Snake(Hashable):
     fn __init__(inout self, owned neural_network: NeuralNetwork[SPEC]):
         self.position = Vector3D(0, 0 , 0)
         self.direction = Vector3D(-1, 0, 0)
-        self.direction_id = 0
         self.neural_network = neural_network
         self.score = INITIAL_SCORE
         self.min_dist = 0
@@ -71,7 +68,6 @@ struct Snake(Hashable):
     fn reset(inout self):
         self.position = Vector3D(0, 0, 0)
         self.direction = Vector3D(-1, 0, 0)
-        self.direction_id = 0
         self.score = INITIAL_SCORE
         self.min_dist = 0
         self.history = List[Vector3D]()
@@ -271,7 +267,7 @@ struct Snake(Hashable):
 
     @staticmethod
     fn in_bounds(position: Vector3D) -> SIMD[DType.bool, 1]:
-        return position[0] >= -GAME_WIDTH_OFFSET and position[0] < GAME_WIDTH_OFFSET  and position[1] >= -GAME_HEIGHT_OFFSET and position[1] < GAME_HEIGHT_OFFSET 
+        return position[0] >= -GAME_WIDTH_OFFSET and position[0] < GAME_WIDTH_OFFSET  and position[1] >= -GAME_HEIGHT_OFFSET and position[1] < GAME_HEIGHT_OFFSET and position[2] >= -GAME_DEPTH_OFFSET and position[2] < GAME_DEPTH_OFFSET
 
     @staticmethod
     fn distance(point_a: Vector3D, point_b: Vector3D) -> Vector1D:
