@@ -27,10 +27,10 @@ alias SPEC = NeuralNetworkSpec(DTYPE, SHAPE)
 alias INITIAL_SCORE: Int = 5
 alias TTL: Vector1D = 100
 alias SNAKE_COUNT: Int = 35
-alias MUTATION_RATE: Float32 = 0.5
+alias MUTATION_RATE: Float32 = 1
 
 # Type aliases
-alias Vector3D = SIMD[DTYPE, 3]
+alias Vector3D = SIMD[DTYPE, 4]
 alias Vector1D = SIMD[DTYPE, 1]
 alias PopulationStats = Dict[String, Scalar[DTYPE]]
 alias RGB = Tuple[Int, Int, Int]

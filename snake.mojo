@@ -17,27 +17,27 @@ struct Snake(Hashable):
     var fitness: Vector1D
 
     fn __init__(inout self) raises:
-        self.position = Vector3D(0, 0, 0)
-        self.direction = Vector3D(-1, 0, 0) # Starts facing left
+        self.position = Vector3D(0, 0, 0, 0)
+        self.direction = Vector3D(-1, 0, 0, 0) # Starts facing left
         self.neural_network = NeuralNetwork[SPEC]()
         self.score = INITIAL_SCORE
         self.min_dist = 0
         self.history = List[Vector3D]()
         self.fitness = TTL
         for i in range(self.score):
-            self.history.append(self.position + Vector3D(self.score - i - 1, 0, 0))
+            self.history.append(self.position + Vector3D(self.score - i - 1, 0, 0, 0))
 
     # Make a Snake instance and transfer ownership of NeuralNetwork
     fn __init__(inout self, owned neural_network: NeuralNetwork[SPEC]):
-        self.position = Vector3D(0, 0 , 0)
-        self.direction = Vector3D(-1, 0, 0)
+        self.position = Vector3D(0, 0, 0, 0)
+        self.direction = Vector3D(-1, 0, 0, 0)
         self.neural_network = neural_network
         self.score = INITIAL_SCORE
         self.min_dist = 0
         self.history = List[Vector3D]()
         self.fitness = TTL
         for i in range(self.score):
-            self.history.append(self.position + Vector3D(self.score - i - 1, 0, 0))
+            self.history.append(self.position + Vector3D(self.score - i - 1, 0, 0, 0))
         
     fn __moveinit__(inout self, owned existing: Self):
         self = Self(existing.neural_network)
@@ -66,14 +66,14 @@ struct Snake(Hashable):
         self.neural_network^.__del__()
 
     fn reset(inout self):
-        self.position = Vector3D(0, 0, 0)
-        self.direction = Vector3D(-1, 0, 0)
+        self.position = Vector3D(0, 0, 0, 0)
+        self.direction = Vector3D(-1, 0, 0, 0)
         self.score = INITIAL_SCORE
         self.min_dist = 0
         self.history = List[Vector3D]()
         self.fitness = TTL
         for i in range(self.score):
-            self.history.append(self.position + Vector3D(self.score - i - 1, 0, 0))
+            self.history.append(self.position + Vector3D(self.score - i - 1, 0, 0, 0))
 
     fn is_dead(self) -> Bool:
         return self.direction[0].to_int() == 0 and self.direction[1].to_int() == 0 and self.direction[2].to_int() == 0
@@ -94,20 +94,20 @@ struct Snake(Hashable):
         var fruit_nadir = (fruit_position > self.position)[2].to_int()
         
         # Absolute directions for walls
-        var wall_west = ~Snake.in_bounds(self.position + Vector3D(-1, 0, 0)).to_int()
-        var wall_east = ~Snake.in_bounds(self.position + Vector3D(1, 0, 0)).to_int()
-        var wall_north = ~Snake.in_bounds(self.position + Vector3D(0, -1, 0)).to_int()
-        var wall_south = ~Snake.in_bounds(self.position + Vector3D(0, 1, 0)).to_int()
-        var wall_zenith = ~Snake.in_bounds(self.position + Vector3D(0, 0, -1)).to_int()
-        var wall_nadir = ~Snake.in_bounds(self.position + Vector3D(0, 0, 1)).to_int()
+        var wall_west = ~Snake.in_bounds(self.position + Vector3D(-1, 0, 0, 0)).to_int()
+        var wall_east = ~Snake.in_bounds(self.position + Vector3D(1, 0, 0, 0)).to_int()
+        var wall_north = ~Snake.in_bounds(self.position + Vector3D(0, -1, 0, 0)).to_int()
+        var wall_south = ~Snake.in_bounds(self.position + Vector3D(0, 1, 0, 0)).to_int()
+        var wall_zenith = ~Snake.in_bounds(self.position + Vector3D(0, 0, -1, 0)).to_int()
+        var wall_nadir = ~Snake.in_bounds(self.position + Vector3D(0, 0, 1, 0)).to_int()
 
         # Absolute directions for body
-        var body_west = (self.position + Vector3D(-1, 0, 0) in self).to_int()
-        var body_east = (self.position + Vector3D(1, 0, 0) in self).to_int()
-        var body_north = (self.position + Vector3D(0, -1, 0) in self).to_int()
-        var body_south = (self.position + Vector3D(0, 1, 0) in self).to_int()
-        var body_zenith = (self.position + Vector3D(0, 0, -1) in self).to_int()
-        var body_nadir = (self.position + Vector3D(0, 0, 1) in self).to_int()
+        var body_west = (self.position + Vector3D(-1, 0, 0, 0) in self).to_int()
+        var body_east = (self.position + Vector3D(1, 0, 0, 0) in self).to_int()
+        var body_north = (self.position + Vector3D(0, -1, 0, 0) in self).to_int()
+        var body_south = (self.position + Vector3D(0, 1, 0, 0) in self).to_int()
+        var body_zenith = (self.position + Vector3D(0, 0, -1, 0) in self).to_int()
+        var body_nadir = (self.position + Vector3D(0, 0, 1, 0) in self).to_int()
 
         # Absolute directions
         var facing_west = (self.direction[0] == -1).to_int()
@@ -123,7 +123,7 @@ struct Snake(Hashable):
         var relative_fruit_right = (fruit_north and facing_east) or (fruit_south and facing_west) or (fruit_east and facing_south) or (fruit_west and facing_north) or (fruit_east and facing_zenith) or (fruit_west and facing_nadir)
         var relative_fruit_above = (fruit_north and facing_zenith) or (fruit_south and facing_nadir) or (fruit_zenith and facing_south) or (fruit_nadir and facing_north) or (fruit_east and facing_zenith) or (fruit_west and facing_nadir)
         var relative_fruit_below = (fruit_north and facing_nadir) or (fruit_south and facing_zenith) or (fruit_zenith and facing_north) or (fruit_nadir and facing_south) or (fruit_east and facing_nadir) or (fruit_west and facing_zenith)
-        var relative_fruit_behind = SIMD[DType.bool]((not relative_fruit_front) and (not relative_fruit_left) and (not relative_fruit_right) and (not relative_fruit_above) and (not relative_fruit_below)).to_int()
+        var relative_fruit_behind = ~relative_fruit_front and ~relative_fruit_left and ~relative_fruit_right and ~relative_fruit_above and ~relative_fruit_below
         
 
         # Relative directions for walls
@@ -176,30 +176,18 @@ struct Snake(Hashable):
                     return i
             return -1
 
-        if self.direction == Vector3D(-1, 0, 0):
-            direction_xy = 0
-            direction_xz = 0
-            direction_yz = -1
-        elif self.direction == Vector3D(1, 0, 0):
-            direction_xy = 2
-            direction_xz = 2
-            direction_yz = -1
-        elif self.direction == Vector3D(0, -1, 0):
-            direction_xy = 3
-            direction_xz = -1
-            direction_yz = 2
-        elif self.direction == Vector3D(0, 1, 0):
-            direction_xy = 1
-            direction_xz = -1
-            direction_yz = 0
-        elif self.direction == Vector3D(0, 0, -1):
-            direction_xy = -1
-            direction_xz = 3
-            direction_yz = 3
-        elif self.direction == Vector3D(0, 0, 1):
-            direction_xy = -1
-            direction_xz = 1
-            direction_yz = 1
+        if self.direction == Vector3D(-1, 0, 0, 0):
+            current_direction = 0
+        elif self.direction == Vector3D(1, 0, 0, 0):
+            current_direction = 2
+        elif self.direction == Vector3D(0, -1, 0, 0):
+            current_direction = 3
+        elif self.direction == Vector3D(0, 1, 0, 0):
+            current_direction = 1
+        elif self.direction == Vector3D(0, 0, -1, 0):
+            current_direction = 4
+        elif self.direction == Vector3D(0, 0, 1, 0):
+            current_direction = 5
 
         var left_right_index = 0
         var left_right_list = List[Int](0, 0, 0, 0)
@@ -223,41 +211,74 @@ struct Snake(Hashable):
             up_down_list = direction_map_xz
 
         if output == 0:
-            left_right_index += 1
-            if left_right_index == 4:
-                left_right_index = 0
-            current_direction = left_right_list[left_right_index]
+            # left
+            if current_direction == 0:
+                current_direction = 1
+            elif current_direction == 1:
+                current_direction = 2
+            elif current_direction == 2:
+                current_direction = 3
+            elif current_direction == 3:
+                current_direction = 0
+            elif current_direction == 4:
+                current_direction = 1
+            elif current_direction == 5:
+                current_direction = 3
         elif output == 1:
-            left_right_index -= 1
-            if left_right_index == -1:
-                left_right_index = 3
-            current_direction = left_right_list[left_right_index]
+            # right
+            if current_direction == 0:
+                current_direction = 3
+            elif current_direction == 1:
+                current_direction = 0
+            elif current_direction == 2:
+                current_direction = 1
+            elif current_direction == 3:
+                current_direction = 2
+            elif current_direction == 4:
+                current_direction = 3
+            elif current_direction == 5:
+                current_direction = 1
         elif output == 2:
-            up_down_index += 1
-            if up_down_index == 4:
-                up_down_index = 0
-            current_direction = up_down_list[up_down_index]
+            # up
+            if current_direction == 0:
+                current_direction = 5
+            elif current_direction == 1:
+                current_direction = 5
+            elif current_direction == 2:
+                current_direction = 4
+            elif current_direction == 3:
+                current_direction = 4
+            elif current_direction == 4:
+                current_direction = 0
+            elif current_direction == 5:
+                current_direction = 2
         elif output == 3:
-            up_down_index -= 1
-            if up_down_index == -1:
-                up_down_index = 3
-            current_direction = up_down_list[up_down_index]
-        else:
-            print("Invalid output from neural network")
-            return
+            # down
+            if current_direction == 0:
+                current_direction = 4
+            elif current_direction == 1:
+                current_direction = 4
+            elif current_direction == 2:
+                current_direction = 5
+            elif current_direction == 3:
+                current_direction = 5
+            elif current_direction == 4:
+                current_direction = 2
+            elif current_direction == 5:
+                current_direction = 0
 
         if current_direction == 0:
-            self.direction = Vector3D(-1, 0, 0)
+            self.direction = Vector3D(-1, 0, 0, 0)
         elif current_direction == 1:
-            self.direction = Vector3D(0, 1, 0)
+            self.direction = Vector3D(0, 1, 0, 0)
         elif current_direction == 2:
-            self.direction = Vector3D(1, 0, 0)
+            self.direction = Vector3D(1, 0, 0, 0)
         elif current_direction == 3:
-            self.direction = Vector3D(0, -1, 0)
+            self.direction = Vector3D(0, -1, 0, 0)
         elif current_direction == 4:
-            self.direction = Vector3D(0, 0, -1)
+            self.direction = Vector3D(0, 0, -1, 0)
         elif current_direction == 5:
-            self.direction = Vector3D(0, 0, 1)
+            self.direction = Vector3D(0, 0, 1, 0)
         
 
         var old_fitness = self.fitness
