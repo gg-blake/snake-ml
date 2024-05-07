@@ -28,7 +28,7 @@ alias SNAKE_COUNT: Int = 35
 alias MUTATION_RATE: Float32 = 0.5
 
 # Type aliases
-alias Vector2D = SIMD[DTYPE, 2]
+alias Vector3D = SIMD[DTYPE, 3]
 alias Vector1D = SIMD[DTYPE, 1]
 alias PopulationStats = Dict[String, Scalar[DTYPE]]
 alias RGB = Tuple[Int, Int, Int]
@@ -37,7 +37,7 @@ struct Population:
     var screen: PythonObject
     var logger: Logger
     var habitat: AnyPointer[Snake]
-    var food_array: List[Vector2D]
+    var food_array: List[Vector3D]
     var stats: PopulationStats
     var best_snake: SnakeHandler
     var active: Bool
@@ -51,7 +51,7 @@ struct Population:
         self.screen = pygame.display.set_mode((GAME_WIDTH * GAME_SCALE, GAME_HEIGHT * GAME_SCALE))
         self.logger = Logger("logs")
         self.habitat = AnyPointer[Snake].alloc(SNAKE_COUNT)
-        self.food_array = List[Vector2D]()
+        self.food_array = List[Vector3D]()
         self.stats = PopulationStats()
         self.stats["generation"] = 0
         self.stats["max"] = TTL
@@ -103,7 +103,7 @@ struct Population:
         var pyrandom = Python.import_module("random")
         var rand_x = pyrandom.randint(-GAME_WIDTH_OFFSET, GAME_WIDTH_OFFSET-1).to_float64().to_int()
         var rand_y = pyrandom.randint(-GAME_HEIGHT_OFFSET, GAME_HEIGHT_OFFSET-1).to_float64().to_int()
-        self.food_array.append(Vector2D(rand_x, rand_y))
+        self.food_array.append(Vector3D(rand_x, rand_y))
 
     fn update_habitat(inout self) raises:
         var pygame = Python.import_module("pygame")
@@ -222,7 +222,7 @@ struct Population:
     fn draw_latest_food(inout self) raises:
         Self.draw_food(self.screen, self.food_array[-1], (0, 200, 0))
 
-    fn draw_all_food(inout self, food_array: List[Vector2D]) raises:
+    fn draw_all_food(inout self, food_array: List[Vector3D]) raises:
         Self.draw_food(self.screen, food_array[-1], (0, 200, 0))
         for index in range(len(food_array) - 1):
             Self.draw_food(self.screen, food_array[index], (75, 75, 75))
@@ -231,7 +231,7 @@ struct Population:
         self.draw_all_food(self.food_array)
 
     @staticmethod
-    fn draw_food(screen: PythonObject, position: Vector2D, color: RGB) raises:
+    fn draw_food(screen: PythonObject, position: Vector3D, color: RGB) raises:
         var pygame = Python.import_module("pygame")
         var food_x = position[0] + GAME_WIDTH_OFFSET
         var food_y = position[1] + GAME_HEIGHT_OFFSET
