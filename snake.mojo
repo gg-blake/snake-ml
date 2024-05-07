@@ -1,5 +1,5 @@
 from python import Python
-from population import Vector2D, Vector1D, DTYPE, GAME_WIDTH_OFFSET, GAME_HEIGHT_OFFSET, INITIAL_SCORE, GAME_SCALE, TTL, SPEC
+from population import Vector3D, Vector1D, DTYPE, GAME_WIDTH_OFFSET, GAME_HEIGHT_OFFSET, INITIAL_SCORE, GAME_SCALE, TTL, SPEC
 from neural_network import NeuralNetwork
 from math import abs, sqrt, clamp
 from tensor import Tensor, TensorSpec
@@ -7,41 +7,41 @@ from logger import Logger
 
 
 struct Snake(Hashable):
-    var position: Vector2D
-    var direction: Vector2D
+    var position: Vector3D
+    var direction: Vector3D
     var score: Int
     var min_dist: Vector1D
     var neural_network: NeuralNetwork[SPEC]
-    var history: List[Vector2D]
+    var history: List[Vector3D]
     var fitness: Vector1D
 
     fn __init__(inout self) raises:
-        self.position = Vector2D(0, 0)
-        self.direction = Vector2D(-1, 0)
+        self.position = Vector3D(0, 0)
+        self.direction = Vector3D(-1, 0)
         self.neural_network = NeuralNetwork[SPEC]()
         self.score = INITIAL_SCORE
         self.min_dist = 0
-        self.history = List[Vector2D]()
+        self.history = List[Vector3D]()
         self.fitness = TTL
         for i in range(self.score):
-            self.history.append(self.position + Vector2D(self.score - i - 1, 0))
+            self.history.append(self.position + Vector3D(self.score - i - 1, 0))
 
     # Make a Snake instance and transfer ownership of NeuralNetwork
     fn __init__(inout self, owned neural_network: NeuralNetwork[SPEC]):
-        self.position = Vector2D(0, 0)
-        self.direction = Vector2D(-1, 0)
+        self.position = Vector3D(0, 0)
+        self.direction = Vector3D(-1, 0)
         self.neural_network = neural_network
         self.score = INITIAL_SCORE
         self.min_dist = 0
-        self.history = List[Vector2D]()
+        self.history = List[Vector3D]()
         self.fitness = TTL
         for i in range(self.score):
-            self.history.append(self.position + Vector2D(self.score - i - 1, 0))
+            self.history.append(self.position + Vector3D(self.score - i - 1, 0))
         
     fn __moveinit__(inout self, owned existing: Self):
         self = Self(existing.neural_network)
 
-    fn __contains__(self, point: Vector2D) -> SIMD[DType.bool, 1]:
+    fn __contains__(self, point: Vector3D) -> SIMD[DType.bool, 1]:
         for p in self.history:
             if p[] == point:
                 return True
@@ -65,19 +65,19 @@ struct Snake(Hashable):
         self.neural_network^.__del__()
 
     fn reset(inout self):
-        self.position = Vector2D(0, 0)
-        self.direction = Vector2D(-1, 0)
+        self.position = Vector3D(0, 0)
+        self.direction = Vector3D(-1, 0)
         self.score = INITIAL_SCORE
         self.min_dist = 0
-        self.history = List[Vector2D]()
+        self.history = List[Vector3D]()
         self.fitness = TTL
         for i in range(self.score):
-            self.history.append(self.position + Vector2D(self.score - i - 1, 0))
+            self.history.append(self.position + Vector3D(self.score - i - 1, 0))
 
     fn is_dead(self) -> Bool:
         return self.direction[0].to_int() == 0 and self.direction[1].to_int() == 0
 
-    fn update(inout self, screen: PythonObject, fruit_position: Vector2D, stats: Dict[String, Float32]) raises:
+    fn update(inout self, screen: PythonObject, fruit_position: Vector3D, stats: Dict[String, Float32]) raises:
         if self.is_dead():
             return
 
@@ -89,15 +89,15 @@ struct Snake(Hashable):
         var fruit_top = (fruit_position < self.position)[1].to_int()
         var fruit_bottom = (fruit_position > self.position)[1].to_int()
         
-        var wall_left = ~Snake.in_bounds(self.position + Vector2D(-1, 0)).to_int()
-        var wall_right = ~Snake.in_bounds(self.position + Vector2D(1, 0)).to_int()
-        var wall_top = ~Snake.in_bounds(self.position + Vector2D(0, -1)).to_int()
-        var wall_bottom = ~Snake.in_bounds(self.position + Vector2D(0, 1)).to_int()
+        var wall_left = ~Snake.in_bounds(self.position + Vector3D(-1, 0)).to_int()
+        var wall_right = ~Snake.in_bounds(self.position + Vector3D(1, 0)).to_int()
+        var wall_top = ~Snake.in_bounds(self.position + Vector3D(0, -1)).to_int()
+        var wall_bottom = ~Snake.in_bounds(self.position + Vector3D(0, 1)).to_int()
 
-        var body_left = (self.position + Vector2D(-1, 0) in self).to_int()
-        var body_right = (self.position + Vector2D(1, 0) in self).to_int()
-        var body_top = (self.position + Vector2D(0, -1) in self).to_int()
-        var body_bottom = (self.position + Vector2D(0, 1) in self).to_int()
+        var body_left = (self.position + Vector3D(-1, 0) in self).to_int()
+        var body_right = (self.position + Vector3D(1, 0) in self).to_int()
+        var body_top = (self.position + Vector3D(0, -1) in self).to_int()
+        var body_bottom = (self.position + Vector3D(0, 1) in self).to_int()
 
         var facing_left = (self.direction[0] == -1).to_int()
         var facing_right = (self.direction[0] == 1).to_int()
@@ -135,13 +135,13 @@ struct Snake(Hashable):
         output = torch.argmax(output)
 
         var direction_num = 0
-        if Vector2D(0, -1) == self.direction:
+        if Vector3D(0, -1) == self.direction:
             direction_num = 0
-        elif Vector2D(1, 0) == self.direction:
+        elif Vector3D(1, 0) == self.direction:
             direction_num = 1
-        elif Vector2D(0, 1) == self.direction:
+        elif Vector3D(0, 1) == self.direction:
             direction_num = 2
-        elif Vector2D(-1, 0) == self.direction:
+        elif Vector3D(-1, 0) == self.direction:
             direction_num = 3
 
         if output == 0:
@@ -158,16 +158,16 @@ struct Snake(Hashable):
 
         if direction_num == 0:
             # up
-            self.direction = Vector2D(0, -1)
+            self.direction = Vector3D(0, -1)
         elif direction_num == 1:
             # right
-            self.direction = Vector2D(1, 0)
+            self.direction = Vector3D(1, 0)
         elif direction_num == 2:
             # down
-            self.direction = Vector2D(0, 1)
+            self.direction = Vector3D(0, 1)
         elif direction_num == 3:
             # left
-            self.direction = Vector2D(-1, 0)
+            self.direction = Vector3D(-1, 0)
 
         var old_fitness = self.fitness
         self.move(fruit_position)
@@ -175,21 +175,21 @@ struct Snake(Hashable):
         #print(self.position)
 
     @staticmethod
-    fn in_bounds(position: Vector2D) -> SIMD[DType.bool, 1]:
+    fn in_bounds(position: Vector3D) -> SIMD[DType.bool, 1]:
         return position[0] >= -GAME_WIDTH_OFFSET and position[0] < GAME_WIDTH_OFFSET  and position[1] >= -GAME_HEIGHT_OFFSET and position[1] < GAME_HEIGHT_OFFSET 
 
     @staticmethod
-    fn distance(point_a: Vector2D, point_b: Vector2D) -> Vector1D:
+    fn distance(point_a: Vector3D, point_b: Vector3D) -> Vector1D:
         return sqrt((point_a[0] - point_b[0])**2 + (point_a[1] - point_b[1])**2)
 
-    fn move(inout self, fruit_position: Vector2D):
+    fn move(inout self, fruit_position: Vector3D):
         var next_position = self.position + self.direction
         # Death detection
         var active_death = next_position in self or not Snake.in_bounds(self.position)
         var passive_death = self.fitness <= (self.score - INITIAL_SCORE) * TTL
         if active_death or passive_death:
             # Active death: If the snake hits the game bounds or tail
-            self.direction = Vector2D.splat(0)
+            self.direction = Vector3D.splat(0)
             return
 
         # Food detection

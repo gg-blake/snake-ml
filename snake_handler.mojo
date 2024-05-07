@@ -1,4 +1,4 @@
-from population import Population, Vector2D, PopulationStats, RGB, INITIAL_SCORE, GAME_SCALE, GAME_HEIGHT_OFFSET, GAME_WIDTH_OFFSET, DTYPE
+from population import Population, Vector3D, PopulationStats, RGB, INITIAL_SCORE, GAME_SCALE, GAME_HEIGHT_OFFSET, GAME_WIDTH_OFFSET, DTYPE
 from snake import Snake
 from python import Python
 from time import sleep
@@ -8,10 +8,10 @@ from logger import Logger
 struct SnakeHandler:
     var stats: PopulationStats
     var snake: Snake
-    var food_array: List[Vector2D]
+    var food_array: List[Vector3D]
     var screen: PythonObject
 
-    fn __init__(inout self, snake: Snake, food_array: List[Vector2D], stats: PopulationStats, screen: PythonObject) raises:
+    fn __init__(inout self, snake: Snake, food_array: List[Vector3D], stats: PopulationStats, screen: PythonObject) raises:
         self.stats = stats
         self.snake = Snake()
         self.snake.neural_network.copy(snake.neural_network)
@@ -53,13 +53,13 @@ struct SnakeHandler:
         self.snake.reset()
         self.snake.fitness = preserved_fitness
 
-    fn draw_all_food(inout self, food_array: List[Vector2D]) raises:
+    fn draw_all_food(inout self, food_array: List[Vector3D]) raises:
         Self.draw_food(self.screen, food_array[-1], (0, 200, 0))
         for index in range(len(food_array) - 1):
             Self.draw_food(self.screen, food_array[index], (75, 75, 75))
 
     @staticmethod
-    fn draw_food(screen: PythonObject, position: Vector2D, color: RGB) raises:
+    fn draw_food(screen: PythonObject, position: Vector3D, color: RGB) raises:
         var pygame = Python.import_module("pygame")
         var food_x = position[0] + GAME_WIDTH_OFFSET
         var food_y = position[1] + GAME_HEIGHT_OFFSET
@@ -95,5 +95,5 @@ struct SnakeHandler:
             var index_y = StaticIntTuple[1](index+1)
             var value_x = tensor.__getitem__(index_x)
             var value_y = tensor.__getitem__(index_y)
-            self.food_array.append(Vector2D(value_x, value_y))
+            self.food_array.append(Vector3D(value_x, value_y))
         self.snake.neural_network.load()
