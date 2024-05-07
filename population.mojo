@@ -20,7 +20,7 @@ alias GAME_SCALE: Int = 26
 
 # Neural network constants
 alias DTYPE = DType.float32
-alias SHAPE = NeuralNetworkShape(15, 30, 30, 7)
+alias SHAPE = NeuralNetworkShape(15, 30, 30, 5)
 alias SPEC = NeuralNetworkSpec(DTYPE, SHAPE)
 
 # Population constants
