@@ -1,5 +1,5 @@
 from python import Python
-from population import Vector3D, Vector1D, DTYPE, GAME_WIDTH_OFFSET, GAME_HEIGHT_OFFSET, GAME_DEPTH_OFFSET, INITIAL_SCORE, GAME_SCALE, TTL, SPEC
+from population import Vector3D, Vector1D, DTYPE, GAME_WIDTH_OFFSET, GAME_HEIGHT_OFFSET, GAME_DEPTH_OFFSET, GAME_DEPTH, INITIAL_SCORE, GAME_SCALE, TTL, SPEC
 from neural_network import NeuralNetwork
 from math import abs, sqrt, clamp
 from tensor import Tensor, TensorSpec
@@ -311,11 +311,12 @@ struct Snake(Hashable):
             var body_part = b[]
             var x_position = body_part[0].to_int() + GAME_WIDTH_OFFSET
             var y_position = body_part[1].to_int() + GAME_WIDTH_OFFSET
+            var z_position = body_part[2].to_int() + GAME_DEPTH_OFFSET
+            var z_value = clamp(z_position / GAME_DEPTH, 0, 1)
             var rect = (x_position * GAME_SCALE, y_position * GAME_SCALE, GAME_SCALE, GAME_SCALE)
             var weight = clamp(self.fitness / best_fitness * 200, 0, 200).to_int()
-            var body_part_color = (200 - weight, weight, 20)
-            if self.fitness > best_fitness:
-                body_part_color = (255, 187, 0)
+            var weight_z = clamp(z_value * 200, 0, 200).to_int()
+            var body_part_color = (200 - weight_z, weight, 20)
             pygame.draw.rect(screen, body_part_color, rect)
             if count == self.score - 1:
                 var text_surface = font.render(str(self.fitness), False, (255, 255, 255))
