@@ -1,9 +1,10 @@
-from population import Population, Vector3D, PopulationStats, RGB, INITIAL_SCORE, GAME_SCALE, GAME_HEIGHT_OFFSET, GAME_WIDTH_OFFSET, DTYPE
+from population import Population, Vector3D, PopulationStats, RGB, INITIAL_SCORE, GAME_SCALE, GAME_HEIGHT_OFFSET, GAME_WIDTH_OFFSET, GAME_DEPTH_OFFSET, GAME_DEPTH, DTYPE
 from snake import Snake
 from python import Python
 from time import sleep
 from tensor import Tensor
 from logger import Logger
+from math import clamp
 
 struct SnakeHandler:
     var stats: PopulationStats
@@ -63,7 +64,10 @@ struct SnakeHandler:
         var pygame = Python.import_module("pygame")
         var food_x = position[0] + GAME_WIDTH_OFFSET
         var food_y = position[1] + GAME_HEIGHT_OFFSET
-        pygame.draw.rect(screen, color, (int(food_x) * GAME_SCALE, int(food_y) * GAME_SCALE, GAME_SCALE, GAME_SCALE))
+        var food_z = position[2] + GAME_DEPTH_OFFSET
+        var food_z_scaled = int(clamp(food_z / GAME_DEPTH, 0, 1))
+        var weighted_color = (color.get[0, Int]() * food_z_scaled, color.get[1, Int]() * food_z_scaled, color.get[2, Int]() * food_z_scaled)
+        pygame.draw.rect(screen, weighted_color, (int(food_x) * GAME_SCALE, int(food_y) * GAME_SCALE, GAME_SCALE, GAME_SCALE))
 
     fn draw_fitness(inout self) raises:
         var pygame = Python.import_module("pygame")
