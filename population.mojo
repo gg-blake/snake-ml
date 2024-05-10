@@ -2,12 +2,14 @@ from python import Python
 from snake import Snake
 from neural_network import NeuralNetwork, NeuralNetworkSpec, NeuralNetworkShape
 from math import sqrt, abs, clamp
-from tensor import Tensor
+from tensor import Tensor, TensorShape
 from collections.vector import InlinedFixedVector
 from logger import Logger
 from time import sleep
 from buffer import Buffer
 from snake_handler import SnakeHandler
+from game_object import GameObject3D
+from random import randint
 
 # Screen constants
 alias GAME_WIDTH: Int = 40
@@ -20,26 +22,25 @@ alias GAME_SCALE: Int = 26
 
 # Neural network constants
 alias DTYPE = DType.float32
-alias SHAPE = NeuralNetworkShape(15, 30, 30, 5)
-alias SPEC = NeuralNetworkSpec(DTYPE, SHAPE)
+alias SHAPE = List[Int](15, 30, 30, 5)
 
 # Population constants
 alias INITIAL_SCORE: Int = 5
-alias TTL: Vector1D = 100
+alias TTL: Vec1 = 300
 alias SNAKE_COUNT: Int = 35
 alias MUTATION_RATE: Float32 = 1
 
 # Type aliases
-alias Vector3D = SIMD[DTYPE, 4]
-alias Vector1D = SIMD[DTYPE, 1]
+alias Vec3 = Tensor[DTYPE]
+alias Vec1 = Scalar[DTYPE]
 alias PopulationStats = Dict[String, Scalar[DTYPE]]
 alias RGB = Tuple[Int, Int, Int]
 
 struct Population:
     var screen: PythonObject
     var logger: Logger
-    var habitat: AnyPointer[Snake]
-    var food_array: List[Vector3D]
+    var habitat: UnsafePointer[Snake]
+    var food_array: List[GameObject3D]
     var stats: PopulationStats
     var best_snake: SnakeHandler
     var active: Bool
@@ -52,8 +53,8 @@ struct Population:
         pygame.display.set_caption("Snake AI")
         self.screen = pygame.display.set_mode((GAME_WIDTH * GAME_SCALE, GAME_HEIGHT * GAME_SCALE))
         self.logger = Logger("logs")
-        self.habitat = AnyPointer[Snake].alloc(SNAKE_COUNT)
-        self.food_array = List[Vector3D]()
+        self.habitat = UnsafePointer[Snake].alloc(SNAKE_COUNT)
+        self.food_array = List[GameObject3D]()
         self.stats = PopulationStats()
         self.stats["generation"] = 0
         self.stats["max"] = TTL
@@ -66,7 +67,7 @@ struct Population:
         self.init_habitat()
         
 
-    fn __getitem__(inout self, idx: Int) raises -> NeuralNetwork[SPEC]:
+    fn __getitem__(inout self, idx: Int) raises -> NeuralNetwork[DTYPE]:
         if idx >= SNAKE_COUNT or idx < 0:
             raise Error("Habitat index out of range")
 
@@ -103,9 +104,10 @@ struct Population:
 
     fn generate_food(inout self) raises:
         var pyrandom = Python.import_module("random")
-        var rand_x = pyrandom.randint(-GAME_WIDTH_OFFSET, GAME_WIDTH_OFFSET-1).to_float64().to_int()
-        var rand_y = pyrandom.randint(-GAME_HEIGHT_OFFSET, GAME_HEIGHT_OFFSET-1).to_float64().to_int()
-        self.food_array.append(Vector3D(rand_x, rand_y))
+        var rand_x = int(random.random_si64(-GAME_WIDTH_OFFSET, GAME_WIDTH_OFFSET-1))
+        var rand_y = int(random.random_si64(-GAME_HEIGHT_OFFSET, GAME_HEIGHT_OFFSET-1))
+        var rand_z = int(random.random_si64(-GAME_DEPTH_OFFSET, GAME_DEPTH_OFFSET-1))
+        self.food_array.append(GameObject3D(rand_x, rand_y, rand_z))
 
     fn update_habitat(inout self) raises:
         var pygame = Python.import_module("pygame")
@@ -135,11 +137,11 @@ struct Population:
         pygame.display.update()
 
     fn generate_next_habitat(inout self) raises:
-        var max_fitness_value: Vector1D
+        var max_fitness_value: Vec1
         var max_fitness_index: Int
-        var calculated_average: Vector1D
+        var calculated_average: Vec1
         var previous_stats = self.stats
-        var parent_traits = NeuralNetwork[SPEC]()
+        var parent_traits = NeuralNetwork[DTYPE]()
         max_fitness_value, max_fitness_index, calculated_average = self.set_max_fitness()
         self.set_best_snake(max_fitness_value, max_fitness_index)
         self.update_stats(
@@ -154,7 +156,7 @@ struct Population:
         self.mutate_population(max_fitness_index, parent_traits)
         self.reset_population()
 
-    fn reset_population(inout self):
+    fn reset_population(inout self) raises:
         for i in range(SNAKE_COUNT):
             self.habitat[i].reset()
 
@@ -163,12 +165,12 @@ struct Population:
 
         self.active = True
 
-    fn set_max_fitness(inout self) -> (Vector1D, Int, Vector1D):
-        var max_fitness_value: Vector1D = 0
+    fn set_max_fitness(inout self) -> (Vec1, Int, Vec1):
+        var max_fitness_value: Vec1 = 0
         var max_fitness_index: Int = 0
-        var fitness_sum: Vector1D = 0
+        var fitness_sum: Vec1 = 0
         for index in range(SNAKE_COUNT):
-            var fitness: Vector1D = self.habitat[index].fitness
+            var fitness: Vec1 = self.habitat[index].fitness
             if self.habitat[index].fitness > max_fitness_value:
                 max_fitness_value = fitness
                 max_fitness_index = index
@@ -176,7 +178,7 @@ struct Population:
 
         return max_fitness_value, max_fitness_index, fitness_sum / SNAKE_COUNT
 
-    fn set_best_snake(inout self, new_value: Vector1D, new_index: Int) raises:
+    fn set_best_snake(inout self, new_value: Vec1, new_index: Int) raises:
         var previous_stats = self.stats
         if new_value > int(previous_stats["best_fitness"]):
             self.save()
@@ -199,7 +201,7 @@ struct Population:
 
         
 
-    fn mutate_population(inout self, max_index: Int, parent_traits: NeuralNetwork[SPEC]) raises:
+    fn mutate_population(inout self, max_index: Int, parent_traits: NeuralNetwork[DTYPE]) raises:
         for index in range(SNAKE_COUNT):
             if index != max_index:
                 self.habitat[index].neural_network.copy(parent_traits)
@@ -224,7 +226,7 @@ struct Population:
     fn draw_latest_food(inout self) raises:
         Self.draw_food(self.screen, self.food_array[-1], (0, 200, 0))
 
-    fn draw_all_food(inout self, food_array: List[Vector3D]) raises:
+    fn draw_all_food(inout self, food_array: List[GameObject3D]) raises:
         Self.draw_food(self.screen, food_array[-1], (0, 200, 0))
         for index in range(len(food_array) - 1):
             Self.draw_food(self.screen, food_array[index], (75, 75, 75))
@@ -233,7 +235,7 @@ struct Population:
         self.draw_all_food(self.food_array)
 
     @staticmethod
-    fn draw_food(screen: PythonObject, position: Vector3D, color: RGB) raises:
+    fn draw_food(screen: PythonObject, position: GameObject3D, color: RGB) raises:
         var pygame = Python.import_module("pygame")
         var food_x = position[0] + GAME_WIDTH_OFFSET
         var food_y = position[1] + GAME_HEIGHT_OFFSET
@@ -266,3 +268,22 @@ struct Population:
 
         var filename_prefix = "data/" + str(self.habitat[0].neural_network.__repr__())
         self.logger.notice("NeuralNetwork data deserialized from " + filename_prefix + "-#")
+
+fn main() raises:
+    var pygame = Python.import_module("pygame")
+    var population = Population()
+    var run = True
+    while run:
+        while population.active and run:
+            var events = pygame.event.get()
+            for event in events:
+                if event.type == pygame.QUIT:
+                    run = False
+            
+            var keys = pygame.key.get_pressed()
+            if keys[pygame.K_SPACE] and not population.replay_active:
+                population.replay_active = True
+                population.logger.notice("Replay requested")
+
+                population.update_habitat()
+        population.generate_next_habitat()
