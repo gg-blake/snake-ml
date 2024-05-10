@@ -1,18 +1,20 @@
-from population import Population, Vector3D, PopulationStats, RGB, INITIAL_SCORE, GAME_SCALE, GAME_HEIGHT_OFFSET, GAME_WIDTH_OFFSET, GAME_DEPTH_OFFSET, GAME_DEPTH, DTYPE
+from population import Population, Vec3, Vec1, PopulationStats, RGB, INITIAL_SCORE, GAME_SCALE, GAME_HEIGHT_OFFSET, GAME_WIDTH_OFFSET, GAME_DEPTH_OFFSET, GAME_DEPTH, DTYPE
 from snake import Snake
 from python import Python
 from time import sleep
-from tensor import Tensor
+from tensor import Tensor, TensorShape
 from logger import Logger
 from math import clamp
+from game_object import GameObject3D
+from utils.index import Index
 
 struct SnakeHandler:
     var stats: PopulationStats
     var snake: Snake
-    var food_array: List[Vector3D]
+    var food_array: List[GameObject3D]
     var screen: PythonObject
 
-    fn __init__(inout self, snake: Snake, food_array: List[Vector3D], stats: PopulationStats, screen: PythonObject) raises:
+    fn __init__(inout self, snake: Snake, food_array: List[GameObject3D], stats: PopulationStats, screen: PythonObject) raises:
         self.stats = stats
         self.snake = Snake()
         self.snake.neural_network.copy(snake.neural_network)
@@ -49,18 +51,18 @@ struct SnakeHandler:
             pygame.display.update()
             sleep(current_speed)
 
-    fn reset(inout self):
+    fn reset(inout self) raises:
         var preserved_fitness = self.snake.fitness
         self.snake.reset()
         self.snake.fitness = preserved_fitness
 
-    fn draw_all_food(inout self, food_array: List[Vector3D]) raises:
+    fn draw_all_food(inout self, food_array: List[GameObject3D]) raises:
         Self.draw_food(self.screen, food_array[-1], (0, 200, 0))
         for index in range(len(food_array) - 1):
             Self.draw_food(self.screen, food_array[index], (75, 75, 75))
 
     @staticmethod
-    fn draw_food(screen: PythonObject, position: Vector3D, color: RGB) raises:
+    fn draw_food(screen: PythonObject, position: GameObject3D, color: RGB) raises:
         var pygame = Python.import_module("pygame")
         var food_x = position[0] + GAME_WIDTH_OFFSET
         var food_y = position[1] + GAME_HEIGHT_OFFSET
@@ -77,14 +79,10 @@ struct SnakeHandler:
 
 
     fn save(inout self) raises:
-        var tensor = Tensor[DTYPE](len(self.food_array), 2)
-        for index in range(len(self.food_array)):
-            var index_x = StaticIntTuple[2](index, 0)
-            var index_y = StaticIntTuple[2](index, 1)
-            var value_x = self.food_array[index][0]
-            var value_y = self.food_array[index][1]
-            tensor.__setitem__(index_x, value_x)
-            tensor.__setitem__(index_y, value_y)
+        var tensor = Tensor[DTYPE](TensorShape(len(self.food_array), 3))
+        for vec_i in range(len(self.food_array)):
+            for vec_j in range(3):
+                tensor[Index(vec_i, vec_j)] = self.food_array[vec_i].position[vec_j]
 
         var filename = "checkpoints/" + self.snake.neural_network.__repr__()
         tensor.tofile(filename)
@@ -94,10 +92,14 @@ struct SnakeHandler:
         var filename = "checkpoints/" + self.snake.neural_network.__repr__()
         var tensor = Tensor[DTYPE].fromfile(filename)
         var food_count = tensor.shape()[0]
-        for index in range(0, food_count, 2):
-            var index_x = StaticIntTuple[1](index)
-            var index_y = StaticIntTuple[1](index+1)
-            var value_x = tensor.__getitem__(index_x)
-            var value_y = tensor.__getitem__(index_y)
-            self.food_array.append(Vector3D(value_x, value_y))
+        var vec_size = tensor.shape()[1]
+        for vec_i in range(food_count):
+            var positions = List[Vec1]()
+            for vec_j in range(vec_size):
+                positions.append(tensor[Index(vec_i, vec_j)])
+            
+            var x = positions[0]
+            var y = positions[1]
+            var z = positions[2]
+            self.food_array.append(GameObject3D(x, y, z))
         self.snake.neural_network.load()
