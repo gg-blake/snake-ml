@@ -1,41 +1,47 @@
 from python import Python
 from tensor import Tensor, TensorSpec, TensorShape
 from collections.vector import InlinedFixedVector
+from population import SHAPE
 
 # Type aliases
 alias NeuralNetworkShape = VariadicList[Int]
 alias NeuralNetworkSpec = Tuple[DType, NeuralNetworkShape]
 
 @value
-struct NeuralNetwork[SPEC: NeuralNetworkSpec](Hashable):
-    alias DTYPE = SPEC.get[0, DType]()
-    alias SHAPE = SPEC.get[1, NeuralNetworkShape]()
-    var data: AnyPointer[PythonObject]
+struct NeuralNetwork[DTYPE: DType](Hashable):
+    var data: UnsafePointer[PythonObject]
     var hash: Int
     var data_spec: List[TensorSpec]
+    var shape: List[Int]
     
     fn __init__(inout self) raises:
         var torch = Python.import_module("torch")
-        self.data = AnyPointer[PythonObject].alloc((len(Self.SHAPE) - 1) * 2)
+        self.data = UnsafePointer[PythonObject].alloc((len(SHAPE) - 1) * 2)
         self.hash = int(self.data)
+        self.shape = List[Int](15, 20, 20, 5)
         self.data_spec = List[TensorSpec]()
-        for i in range(len(Self.SHAPE) - 1):
-            self.data[2*i] = torch.rand(Self.SHAPE[i+1], Self.SHAPE[i])
-            self.data[2*i+1] = torch.rand(Self.SHAPE[i+1], 1)
-            self.data_spec.append(TensorSpec(Self.DTYPE, Self.SHAPE[i+1], Self.SHAPE[i]))
-            self.data_spec.append(TensorSpec(Self.DTYPE, Self.SHAPE[i+1], 1))
+        for i in range(3):
+            print(torch)
+            self.data[2*i] = torch.rand(self.shape[i+1], self.shape[i])
+            self.data[2*i+1] = torch.rand(self.shape[i+1], 1)
+            self.data_spec.append(TensorSpec(Self.DTYPE, self.shape[i+1], self.shape[i]))
+            self.data_spec.append(TensorSpec(Self.DTYPE, self.shape[i+1], 1))
 
-    fn __init__(inout self, owned data: AnyPointer[PythonObject]):
+    fn __init__(inout self, owned data: UnsafePointer[PythonObject]):
         self.data = data
         self.hash = int(self.data)
         self.data_spec = List[TensorSpec]()
-        for i in range(len(Self.SHAPE) - 1):
-            self.data_spec.append(TensorSpec(Self.DTYPE, Self.SHAPE[i+1], Self.SHAPE[i]))
-            self.data_spec.append(TensorSpec(Self.DTYPE, Self.SHAPE[i+1], 1))
+        self.shape = SHAPE
+        for i in range(len(self.shape) - 1):
+            self.data_spec.append(TensorSpec(Self.DTYPE, self.shape[i+1], self.shape[i]))
+            self.data_spec.append(TensorSpec(Self.DTYPE, self.shape[i+1], 1))
         
 
     fn __moveinit__(inout self, owned existing: Self):
-        self = Self(existing.data)
+        self.data = existing.data
+        self.hash = existing.hash
+        self.data_spec = existing.data_spec^
+        self.shape = existing.shape
 
     fn __hash__(self) -> Int:
         return self.hash
@@ -54,8 +60,8 @@ struct NeuralNetwork[SPEC: NeuralNetworkSpec](Hashable):
 
     fn __repr__(self) -> String:
         var result: String = "NeuralNetwork-"
-        for i in Self.SHAPE:
-            result += str(i)
+        for i in self.shape:
+            result += str(i[])
 
         return result
 
@@ -93,12 +99,12 @@ struct NeuralNetwork[SPEC: NeuralNetworkSpec](Hashable):
         return self.data_spec[index]
 
     fn feed(self, input_array: PythonObject) raises -> PythonObject:
-        if len(input_array) != Self.SHAPE[0]:
+        if len(input_array) != self.shape[0]:
             raise Error("Input tensor has wrong dimensions")
 
         var torch = Python.import_module("torch")
         var output_array = input_array
-        for i in range(len(Self.SHAPE) - 1):
+        for i in range(len(self.shape) - 1):
             output_array = torch.special.expit(torch.mm(self.data[2*i], output_array) + self.data[2*i+1])
         return output_array
 
