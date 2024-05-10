@@ -108,9 +108,9 @@ struct GameObject3D(CollectionElement):
         return self._cmp_on_axis(other, self.velocity["up"]) < 0
 
     fn is_above_strict(inout self, other: Self) raises -> Bool:
-        var cmp_lr = self._cmp_on_axis(other, self.velocity["left"])
-        var cmp_fb = self._cmp_on_axis(other, self.velocity["front"])
-        return self._cmp_on_axis(other, self.velocity["up"]) & ~cmp_lr & ~cmp_fb < 0
+        var cmp_lr = self._cmp_on_axis(other, self.velocity["left"]) == 0
+        var cmp_fb = self._cmp_on_axis(other, self.velocity["front"]) == 0
+        return self._cmp_on_axis(other, self.velocity["up"]) < 0 and cmp_lr and cmp_fb
 
     fn is_below(inout self, other: Self) raises -> Bool:
         return self._cmp_on_axis(other, self.velocity["down"]) < 0
@@ -118,39 +118,39 @@ struct GameObject3D(CollectionElement):
     fn is_below_strict(inout self, other: Self) raises -> Bool:
         var cmp_lr = self._cmp_on_axis(other, self.velocity["left"])
         var cmp_fb = self._cmp_on_axis(other, self.velocity["front"])
-        return self._cmp_on_axis(other, self.velocity["down"]) & ~cmp_lr & ~cmp_fb < 0
+        return self._cmp_on_axis(other, self.velocity["down"]) < 0 and cmp_lr and cmp_fb
 
     fn is_left(inout self, other: Self) raises -> Bool:
         return self._cmp_on_axis(other, self.velocity["left"]) < 0
 
     fn is_left_strict(inout self, other: Self) raises -> Bool:
-        var cmp_lr = self._cmp_on_axis(other, self.velocity["left"])
-        var cmp_fb = self._cmp_on_axis(other, self.velocity["front"])
-        return self._cmp_on_axis(other, self.velocity["left"]) & ~cmp_lr & ~cmp_fb < 0
+        var cmp_ud = self._cmp_on_axis(other, self.velocity["up"]) == 0
+        var cmp_fb = self._cmp_on_axis(other, self.velocity["front"]) == 0
+        return self._cmp_on_axis(other, self.velocity["left"]) < 0 and cmp_ud and cmp_fb
 
     fn is_right(inout self, other: Self) raises -> Bool:
         return self._cmp_on_axis(other, self.velocity["right"]) < 0
 
     fn is_right_strict(inout self, other: Self) raises -> Bool:
-        var cmp_lr = self._cmp_on_axis(other, self.velocity["left"])
-        var cmp_fb = self._cmp_on_axis(other, self.velocity["front"])
-        return self._cmp_on_axis(other, self.velocity["right"]) & ~cmp_lr & ~cmp_fb < 0
+        var cmp_ud = self._cmp_on_axis(other, self.velocity["up"]) == 0
+        var cmp_fb = self._cmp_on_axis(other, self.velocity["front"]) == 0
+        return self._cmp_on_axis(other, self.velocity["right"]) < 0 and cmp_ud and cmp_fb
 
     fn is_ahead(inout self, other: Self) raises -> Bool:
         return self._cmp_on_axis(other, self.velocity["front"]) < 0
 
     fn is_ahead_strict(inout self, other: Self) raises -> Bool:
-        var cmp_lr = self._cmp_on_axis(other, self.velocity["left"])
-        var cmp_fb = self._cmp_on_axis(other, self.velocity["front"])
-        return self._cmp_on_axis(other, self.velocity["front"]) & ~cmp_lr & ~cmp_fb < 0
+        var cmp_lr = self._cmp_on_axis(other, self.velocity["left"]) == 0
+        var cmp_ud = self._cmp_on_axis(other, self.velocity["up"]) == 0
+        return self._cmp_on_axis(other, self.velocity["front"]) < 0 and cmp_lr and cmp_ud
 
     fn is_behind(inout self, other: Self) raises -> Bool:
         return self._cmp_on_axis(other, self.velocity["back"]) < 0
 
     fn is_behind_strict(inout self, other: Self) raises -> Bool:
-        var cmp_lr = self._cmp_on_axis(other, self.velocity["left"])
-        var cmp_fb = self._cmp_on_axis(other, self.velocity["front"])
-        return self._cmp_on_axis(other, self.velocity["back"]) & ~cmp_lr & ~cmp_fb < 0
+        var cmp_lr = self._cmp_on_axis(other, self.velocity["left"]) == 0
+        var cmp_ud = self._cmp_on_axis(other, self.velocity["up"]) == 0
+        return self._cmp_on_axis(other, self.velocity["back"]) < 0 and cmp_lr and cmp_ud
 
     fn _get_eigenindex(self, inout vec: Vec3) raises -> Scalar[DType.index]:
         var abs_vec = (vec.reshape(TensorShape(1, 3)))**2
