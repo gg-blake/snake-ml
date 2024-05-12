@@ -75,7 +75,7 @@ struct Snake(Hashable):
             self.history.append(self.position + Vector2D(self.score - i - 1, 0))
 
     fn is_dead(self) -> Bool:
-        return self.direction[0].to_int() == 0 and self.direction[1].to_int() == 0
+        return int(self.direction[0]) == 0 and int(self.direction[1]) == 0
 
     fn update(inout self, screen: PythonObject, fruit_position: Vector2D, stats: Dict[String, Float32]) raises:
         if self.is_dead():
@@ -84,31 +84,31 @@ struct Snake(Hashable):
         var torch = Python.import_module("torch")
         var pygame = Python.import_module("pygame")
 
-        var fruit_left = (fruit_position < self.position)[0].to_int()
-        var fruit_right = (fruit_position > self.position)[0].to_int()
-        var fruit_top = (fruit_position < self.position)[1].to_int()
-        var fruit_bottom = (fruit_position > self.position)[1].to_int()
+        var fruit_left = int((fruit_position < self.position)[0])
+        var fruit_right = int((fruit_position > self.position)[0])
+        var fruit_top = int((fruit_position < self.position)[1])
+        var fruit_bottom = int((fruit_position > self.position)[1])
         
-        var wall_left = ~Snake.in_bounds(self.position + Vector2D(-1, 0)).to_int()
-        var wall_right = ~Snake.in_bounds(self.position + Vector2D(1, 0)).to_int()
-        var wall_top = ~Snake.in_bounds(self.position + Vector2D(0, -1)).to_int()
-        var wall_bottom = ~Snake.in_bounds(self.position + Vector2D(0, 1)).to_int()
+        var wall_left = ~int(Snake.in_bounds(self.position + Vector2D(-1, 0)))
+        var wall_right = ~int(Snake.in_bounds(self.position + Vector2D(1, 0)))
+        var wall_top = ~int(Snake.in_bounds(self.position + Vector2D(0, -1)))
+        var wall_bottom = ~int(Snake.in_bounds(self.position + Vector2D(0, 1)))
 
-        var body_left = (self.position + Vector2D(-1, 0) in self).to_int()
-        var body_right = (self.position + Vector2D(1, 0) in self).to_int()
-        var body_top = (self.position + Vector2D(0, -1) in self).to_int()
-        var body_bottom = (self.position + Vector2D(0, 1) in self).to_int()
+        var body_left = int((self.position + Vector2D(-1, 0) in self))
+        var body_right = int((self.position + Vector2D(1, 0) in self))
+        var body_top = int((self.position + Vector2D(0, -1) in self))
+        var body_bottom = int((self.position + Vector2D(0, 1) in self))
 
-        var facing_left = (self.direction[0] == -1).to_int()
-        var facing_right = (self.direction[0] == 1).to_int()
-        var facing_top = (self.direction[1] == -1).to_int()
-        var facing_bottom = (self.direction[1] == 1).to_int()
+        var facing_left = int((self.direction[0] == -1))
+        var facing_right = int((self.direction[0] == 1))
+        var facing_top = int((self.direction[1] == -1))
+        var facing_bottom = int((self.direction[1] == 1))
 
         var fruit_ahead = (fruit_left and facing_left) or (fruit_right and facing_right) or (fruit_top and facing_top) or (fruit_bottom and facing_bottom)
         var fruit_left_side = (fruit_left and facing_top) or (fruit_right and facing_bottom) or (fruit_top and facing_right) or (fruit_bottom and facing_left)
         var fruit_right_side = (fruit_left and facing_bottom) or (fruit_right and facing_top) or (fruit_top and facing_left) or (fruit_bottom and facing_right)
-        var fruit_behind = SIMD[DType.bool, 1]((not fruit_ahead) and (not fruit_left) and (not fruit_right)).to_int()
-        var wall_ahead = Self.in_bounds(self.position + self.direction).to_int()
+        var fruit_behind = int(SIMD[DType.bool, 1]((not fruit_ahead) and (not fruit_left) and (not fruit_right)))
+        var wall_ahead = int(Self.in_bounds(self.position + self.direction))
         var wall_left_side = (wall_left and facing_top) or (wall_right and facing_bottom) or (wall_top and facing_right) or (wall_bottom and facing_left)
         var wall_right_side = (wall_left and facing_bottom) or (wall_right and facing_top) or (wall_top and facing_left) or (wall_bottom and facing_right)
         var body_ahead = (body_left and facing_left) or (body_right and facing_right) or (body_top and facing_top) or (body_bottom and facing_bottom)
@@ -218,10 +218,10 @@ struct Snake(Hashable):
         var color = (200, 30, 30)
         for b in self.history:
             var body_part = b[]
-            var x_position = body_part[0].to_int() + GAME_WIDTH_OFFSET
-            var y_position = body_part[1].to_int() + GAME_WIDTH_OFFSET
+            var x_position = int(body_part[0]) + GAME_WIDTH_OFFSET
+            var y_position = int(body_part[1]) + GAME_WIDTH_OFFSET
             var rect = (x_position * GAME_SCALE, y_position * GAME_SCALE, GAME_SCALE, GAME_SCALE)
-            var weight = clamp(self.fitness / best_fitness * 200, 0, 200).to_int()
+            var weight = int(clamp(self.fitness / best_fitness * 200, 0, 200))
             var body_part_color = (200 - weight, weight, 20)
             if self.fitness > best_fitness:
                 body_part_color = (255, 187, 0)

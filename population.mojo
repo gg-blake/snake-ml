@@ -8,6 +8,7 @@ from logger import Logger
 from time import sleep
 from buffer import Buffer
 from snake_handler import SnakeHandler
+from random import random_float64
 
 # Screen constants
 alias GAME_WIDTH: Int = 40
@@ -36,7 +37,7 @@ alias RGB = Tuple[Int, Int, Int]
 struct Population:
     var screen: PythonObject
     var logger: Logger
-    var habitat: AnyPointer[Snake]
+    var habitat: UnsafePointer[Snake]
     var food_array: List[Vector2D]
     var stats: PopulationStats
     var best_snake: SnakeHandler
@@ -50,7 +51,7 @@ struct Population:
         pygame.display.set_caption("Snake AI")
         self.screen = pygame.display.set_mode((GAME_WIDTH * GAME_SCALE, GAME_HEIGHT * GAME_SCALE))
         self.logger = Logger("logs")
-        self.habitat = AnyPointer[Snake].alloc(SNAKE_COUNT)
+        self.habitat = UnsafePointer[Snake].alloc(SNAKE_COUNT)
         self.food_array = List[Vector2D]()
         self.stats = PopulationStats()
         self.stats["generation"] = 0
@@ -101,8 +102,8 @@ struct Population:
 
     fn generate_food(inout self) raises:
         var pyrandom = Python.import_module("random")
-        var rand_x = pyrandom.randint(-GAME_WIDTH_OFFSET, GAME_WIDTH_OFFSET-1).to_float64().to_int()
-        var rand_y = pyrandom.randint(-GAME_HEIGHT_OFFSET, GAME_HEIGHT_OFFSET-1).to_float64().to_int()
+        var rand_x = int(random_float64(-GAME_WIDTH_OFFSET, GAME_WIDTH_OFFSET-1))
+        var rand_y = int(random_float64(-GAME_HEIGHT_OFFSET, GAME_HEIGHT_OFFSET-1))
         self.food_array.append(Vector2D(rand_x, rand_y))
 
     fn update_habitat(inout self) raises:

@@ -10,13 +10,13 @@ alias NeuralNetworkSpec = Tuple[DType, NeuralNetworkShape]
 struct NeuralNetwork[SPEC: NeuralNetworkSpec](Hashable):
     alias DTYPE = SPEC.get[0, DType]()
     alias SHAPE = SPEC.get[1, NeuralNetworkShape]()
-    var data: AnyPointer[PythonObject]
+    var data: UnsafePointer[PythonObject]
     var hash: Int
     var data_spec: List[TensorSpec]
     
     fn __init__(inout self) raises:
         var torch = Python.import_module("torch")
-        self.data = AnyPointer[PythonObject].alloc((len(Self.SHAPE) - 1) * 2)
+        self.data = UnsafePointer[PythonObject].alloc((len(Self.SHAPE) - 1) * 2)
         self.hash = int(self.data)
         self.data_spec = List[TensorSpec]()
         for i in range(len(Self.SHAPE) - 1):
@@ -25,7 +25,7 @@ struct NeuralNetwork[SPEC: NeuralNetworkSpec](Hashable):
             self.data_spec.append(TensorSpec(Self.DTYPE, Self.SHAPE[i+1], Self.SHAPE[i]))
             self.data_spec.append(TensorSpec(Self.DTYPE, Self.SHAPE[i+1], 1))
 
-    fn __init__(inout self, owned data: AnyPointer[PythonObject]):
+    fn __init__(inout self, owned data: UnsafePointer[PythonObject]):
         self.data = data
         self.hash = int(self.data)
         self.data_spec = List[TensorSpec]()
