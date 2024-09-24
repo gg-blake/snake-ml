@@ -27,7 +27,6 @@ class NeuralNetwork:
             inputs = inputs @ self._weights[i] + self._biases[i]
             inputs = torch.relu(inputs)  # Activation function
             inputs = torch.softmax(inputs, dim=1) # Normalization function
-            
 
         return inputs
 
@@ -152,9 +151,6 @@ async def server():
     loop.add_signal_handler(signal.SIGTERM, stop.set_result, None)
 
     async with serve(handle_control_channel, "localhost", 6600):
-        await stop
-
-    async with serve(handle_data_channel, "localhost", 6601):
         await stop
 
 
