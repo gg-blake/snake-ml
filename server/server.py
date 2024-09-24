@@ -3,6 +3,8 @@ import torch.nn.functional as F
 import asyncio
 import signal
 from websockets.asyncio.server import serve
+import json
+from time import time
 
 
 GAME_BOUNDS = 10
@@ -89,6 +91,7 @@ class Game:
         self.pos = Vec2(0, 0)
         self.vel = Vec2(1, 0)
         self.dir = 0
+        self.score = 5
         self.alive = True
         self.history = []
         self.data = []
@@ -97,14 +100,26 @@ class Game:
         self.pos = Vec2(0, 0)
         self.vel = Vec2(1, 0)
 
-    def step(self):
+    def step(self, key):
+        if key == "w" and self.vel != Vec2(0, -1):
+            self.vel = Vec2(0, 1)
+        elif key == "s" and self.vel != Vec2(0, 1):
+            self.vel = Vec2(0, -1)
+        elif key == "a" and self.vel != Vec2(1, 0):
+            self.vel = Vec2(-1, 0)
+        elif key == "d" and self.vel != Vec2(-1, 0):
+            self.vel = Vec2(1, 0)
+
         self.pos += self.vel
-        self.history.append(self.pos)
-        self.history.pop(0)  # Keep history length fixed
+        self.history.append([self.pos.x, self.pos.y])
         if abs(self.pos.x) > GAME_BOUNDS or abs(self.pos.y) > GAME_BOUNDS:
             self.alive = False
-        elif self.pos in self.history[:-1]:
+        elif [self.pos.x, self.pos.y] in self.history[:-1]:
             self.alive = False
+
+        # Keep history length fixed
+        while len(self.history) > self.score:
+            self.history.pop(0)
 
     def get_inputs(self, food_pos):
         food_above = food_pos.y > self.pos.y
@@ -130,13 +145,18 @@ class Game:
 
         return torch.tensor([[food_ahead, food_left, food_right, obstacle_ahead, obstacle_left, obstacle_right]], dtype=torch.float32)
 
+g = Game()
         
 async def handle_control_channel(websocket):
     async for message in websocket:
         print(f"Received message (control): {message}")
-        await websocket.send(f"Echo (control): {message}")
+        decoded = json.loads(message)
+        g.step(decoded["key_pressed"])
+        decoded["pos"] = [g.pos.x, g.pos.y]
+        decoded["timestamp"] = time() / 1000
+        decoded["history"] = g.history
+        await websocket.send(json.dumps(decoded))
 
-num = "d"
 
 async def handle_data_channel(websocket):
     async for message in websocket:
