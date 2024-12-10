@@ -1,5 +1,5 @@
 import torch
-from util import NeuralNetwork
+from util import NeuralNetwork, GameObject
 
 GAME_BOUNDS = 10
 INITIAL_SCORE = 5
@@ -35,7 +35,7 @@ class Snake:
             self.history.append(torch.tensor([-self.score + i + 1, 0]))
         self.fitness = TTL
 
-    def step(self, key: str | int, food: torch.Tensor):
+    def step(self, key: str | int, food: GameObject):
         if not self.alive:
             return
         
@@ -93,31 +93,7 @@ class Snake:
         direction_matrix = (identity == self.vel).all(dim=1)
         return direction_matrix & direction_bools
 
-    def get_inputs(self, food_pos: torch.Tensor):
-        food_dir = food_pos - self.pos
-        food_above = food_dir[1] > 0
-        food_below = food_pos[1] < 0
-        food_west = food_dir[0] < 0
-        food_east = food_pos[0] > 0
+    def get_inputs(self, food_pos: GameObject):
         
-        food_ahead = self.vel[0] == 1 and food_east or self.vel[0] == -1 and food_west or self.vel[1] == 1 and food_above or self.vel[1] == -1 and food_below
-        food_left = self.vel[0] == 1 and food_above or self.vel[0] == -1 and food_below or self.vel[1] == 1 and food_west or self.vel[1] == -1 and food_east
-        food_right = self.vel[0] == 1 and food_above or self.vel[0] == -1 and food_below or self.vel[1] == 1 and food_east or self.vel[1] == -1 and food_west
-        obstacle_above = (self.pos + UP)[1] > GAME_BOUNDS or self.pos + UP in self
-        obstacle_below = (self.pos + DOWN)[1] < -GAME_BOUNDS or self.pos + DOWN in self
-        obstacle_west = (self.pos + LEFT)[0] < -GAME_BOUNDS or self.pos + LEFT in self
-        obstacle_east = (self.pos + RIGHT)[0] > GAME_BOUNDS or self.pos + RIGHT in self
-        #obstacle_ahead = self.relative_facing(torch.tensor([obstacle_east, obstacle_west, obstacle_above, obstacle_below])).any().item()
-        #obstacle_left = self.relative_facing(torch.tensor([obstacle_above, obstacle_below, obstacle_west, obstacle_east])).any().item()
-        #obstacle_right = self.relative_facing(torch.tensor([obstacle_above, obstacle_below, obstacle_east, obstacle_west])).any().item()
-        obstacle_ahead = self.vel[0] == 1 and obstacle_east or self.vel[0] == -1 and obstacle_west or self.vel[1] == 1 and obstacle_above or self.vel[1] == -1 and obstacle_below
-        obstacle_left = self.vel[0] == 1 and obstacle_above or self.vel[0] == -1 and obstacle_below or self.vel[1] == 1 and obstacle_west or self.vel[1] == -1 and obstacle_east
-        obstacle_right = self.vel[0] == 1 and obstacle_above or self.vel[0] == -1 and obstacle_below or self.vel[1] == 1 and obstacle_east or self.vel[1] == -1 and obstacle_west
-        food_ahead = float(food_ahead)
-        food_left = float(food_left)
-        food_right = float(food_right)
-        obstacle_ahead = float(obstacle_ahead)
-        obstacle_left = float(obstacle_left)
-        obstacle_right = float(obstacle_right)
 
         return torch.tensor([food_ahead, food_left, food_right, obstacle_ahead, obstacle_left, obstacle_right], dtype=torch.float32)
