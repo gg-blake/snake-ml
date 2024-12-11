@@ -1,10 +1,10 @@
 import torch
 from util import NeuralNetwork, GameObject
 
-GAME_BOUNDS = 10
+GAME_BOUNDS = 30
 INITIAL_SCORE = 5
 TTL = 100
-UP, DOWN, LEFT, RIGHT = torch.tensor([0, 1]), torch.tensor([0, -1]), torch.tensor([-1, 0]), torch.tensor([1, 0])
+TURN_ANGLE = torch.pi / 2
 
 class NDSnake:
     def __init__(self, n_dims, hidden_size):
@@ -42,9 +42,9 @@ class NDSnake:
         
         if key != -1:
             if key < self.n_dims:
-                self.game_object.vel.turn_left(key % self.n_dims)
+                self.game_object.vel.turn_left_angle(key % self.n_dims)
             elif key >= self.n_dims:
-                self.game_object.vel.turn_right(key % self.n_dims)
+                self.game_object.vel.turn_right_angle(key % self.n_dims)
 
         next_position = self.game_object.pos + self.game_object.vel.axis_lookup[0]
         body_parts = torch.stack(self.history[:-1])
@@ -81,21 +81,17 @@ class NDSnake:
         return False
 
     def get_inputs(self, food_pos: torch.Tensor):
-        norms = torch.stack(list(self.game_object.vel.axis_lookup.values())) + snake.game_object.pos.repeat(snake.n_dims * 2, 1)
+        norms = torch.stack(list(self.game_object.vel.axis_lookup.values())) + self.game_object.pos.repeat(self.n_dims * 2, 1)
         dist = torch.cdist(norms, torch.stack([b for b in self.history[:-1]]))
         nearby_body = torch.any(torch.cat([dist[:self.n_dims], dist[self.n_dims+1:]]) == 0, dim=1).float()
         nearby_food = (self.game_object.facing(food_pos) == 1).float()
         nearby_bounds = (self.game_object.distance_from_bounds(GAME_BOUNDS - 1) == 0).float()
         nearby_bounds = torch.cat([nearby_bounds[:self.n_dims], nearby_bounds[self.n_dims+1:]])
-        print({"food":nearby_food})
-        print({"bounds":nearby_bounds})
-        print({"body":nearby_body})
-        print(len(nearby_body) + len(nearby_bounds) + 1, self.input_size)
-        #return torch.tensor([food_ahead, food_left, food_right, obstacle_ahead, obstacle_left, obstacle_right], dtype=torch.float32)
+        return torch.cat([nearby_body, nearby_food, nearby_bounds])
 
 if __name__ == '__main__':
-    food = torch.tensor([2, 5], dtype=torch.float32)
-    snake = NDSnake(2, 20)
+    food = torch.tensor([4, 0, 0], dtype=torch.float32)
+    snake = NDSnake(3, 20)
     #snake.step(1, food)
     snake.get_inputs(food)
     #snake.step(2, food)

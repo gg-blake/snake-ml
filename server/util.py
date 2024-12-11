@@ -50,6 +50,44 @@ class NeuralNetwork(nn.Module):
             return self.forward(inputs)
         
 
+def aguilera_perez_rotation(v: torch.Tensor, basis: torch.Tensor, angle: float) -> torch.Tensor:
+    """
+    Rotate a vector v around a subspace defined by a basis using the Aguilera-Pérez algorithm.
+
+    Parameters:
+    - v: torch.Tensor, the vector to be rotated (shape: [n, 1] where n is the dimension)
+    - basis: torch.Tensor, the basis of the subspace (shape: [n, m] where m is the subspace dimension)
+    - angle: float, the angle of rotation in radians
+
+    Returns:
+    - torch.Tensor, the rotated vector (same shape as v)
+    """
+    # Step 1: Normalize the basis vectors (ensure it's an orthonormal basis)
+    Q, _ = torch.linalg.qr(basis)  # QR decomposition to orthonormalize basis
+    m = Q.shape[1]  # Dimension of the subspace
+    n = Q.shape[0]  # Dimension of the full space
+
+    # Step 2: Project v onto the subspace
+    v_projected = Q.T @ v  # Project v into the subspace (shape: [m, 1])
+
+    # Step 3: Create a rotation matrix within the subspace
+    cos_theta = torch.cos(angle)
+    sin_theta = torch.sin(angle)
+    rotation_matrix = torch.eye(m)  # Identity matrix for the subspace
+    if m >= 2:
+        rotation_matrix[0, 0] = cos_theta
+        rotation_matrix[0, 1] = -sin_theta
+        rotation_matrix[1, 0] = sin_theta
+        rotation_matrix[1, 1] = cos_theta
+
+    # Step 4: Rotate the vector in the subspace
+    v_rotated_projected = rotation_matrix @ v_projected  # Rotate within the subspace
+
+    # Step 5: Reconstruct the full-space vector
+    v_rotated = Q @ v_rotated_projected  # Map back to the original space (shape: [n, 1])
+
+    return v_rotated
+
 
 class NDVector:
     def __init__(self, n_dims=2):
@@ -84,6 +122,18 @@ class NDVector:
             
         self.axis_lookup[self.plane_ids[dim][0]] = tmp
         
+    def turn_left_angle(self, dim, theta=torch.pi / 2):
+        basis_vector_x = self.axis_lookup[self.plane_ids[dim][0]]
+        basis_vector_y = self.axis_lookup[self.plane_ids[dim][1]]
+        basis = torch.stack([basis_vector_x, basis_vector_y])
+        for i in range(4):
+            old_vector = self.axis_lookup[self.plane_ids[dim][i]]
+            rotated_vector = aguilera_perez_rotation(old_vector, basis.T, torch.tensor(theta))
+            self.axis_lookup[self.plane_ids[dim][i]] = rotated_vector
+            
+    def turn_right_angle(self, dim, theta=torch.pi / 2):
+        self.turn_left_angle(dim, -theta)
+        
 class GameObject:
     def __init__(self, n_dims):
         self.n_dims = n_dims
@@ -93,8 +143,7 @@ class GameObject:
     def facing(self, pos: torch.Tensor):
         assert pos.shape[0] == self.n_dims
         norms = torch.stack(list(self.vel.axis_lookup.values()))
-        print(self.pos, pos, self.pos - pos == 0)
-        return F.cosine_similarity(self.pos, pos, dim=0)
+        return F.cosine_similarity((self.pos - pos).repeat(self.n_dims * 2, 1), norms, dim=1)
         
     def batch_facing(self, pos: torch.Tensor):
         # TODO: Vectorize this method
@@ -110,5 +159,9 @@ class GameObject:
 if __name__ == '__main__':
     food = torch.tensor([1, 9, 0], dtype=torch.float32)
     obj = GameObject(3)
-    print(obj.facing(food))
-    print(obj.batch_facing(torch.stack([food, food, food])))
+    vec = NDVector(3)
+    print(list(vec.axis_lookup.values()))
+    vec.turn_left_angle(0)
+    print(list(vec.axis_lookup.values()))
+    vec.turn_left_angle(0)
+    print(list(vec.axis_lookup.values()))
