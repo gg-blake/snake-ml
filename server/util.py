@@ -51,7 +51,7 @@ class NeuralNetwork(nn.Module):
         
 
 
-class Vector:
+class NDVector:
     def __init__(self, n_dims=2):
         self.n_dims = n_dims
         self.dim_ids = [[i, i+n_dims] for i in range(0, n_dims)]
@@ -87,14 +87,14 @@ class Vector:
 class GameObject:
     def __init__(self, n_dims):
         self.n_dims = n_dims
-        self.pos = torch.zeros(n_dims)
-        self.vel = Vector(n_dims)
+        self.pos = torch.zeros(n_dims, dtype=torch.float32)
+        self.vel = NDVector(n_dims)
         
     def facing(self, pos: torch.Tensor):
         assert pos.shape[0] == self.n_dims
         norms = torch.stack(list(self.vel.axis_lookup.values()))
-        print(norms.shape, pos.shape)
-        return F.cosine_similarity(norms, pos, dim=1)
+        print(self.pos, pos, self.pos - pos == 0)
+        return F.cosine_similarity(self.pos, pos, dim=0)
         
     def batch_facing(self, pos: torch.Tensor):
         # TODO: Vectorize this method
@@ -102,8 +102,11 @@ class GameObject:
         
     def distance_from_bounds(self, scale: int):
         norms = torch.stack(list(self.vel.axis_lookup.values()))
-        return torch.sum(torch.abs(scale * norms) - torch.abs(self.pos * norms), dim=1)
+        return torch.sum(torch.abs(scale * norms) - torch.abs(self.pos * norms), dim=-1)
         
+    def batch_distance_from_bounds(self, pos: torch.Tensor):
+        return torch.cdist(self.pos.unsqueeze(0), pos.float(), p=2)
+
 if __name__ == '__main__':
     food = torch.tensor([1, 9, 0], dtype=torch.float32)
     obj = GameObject(3)
