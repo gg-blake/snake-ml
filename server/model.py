@@ -99,7 +99,7 @@ class Model(nn.Module):
         
         new_vec = self.nd_vector(logits, vel)
         
-        return snake_pos + new_vec[0], new_vec
+        return snake_pos + new_vec[0], new_vec, nearby_food, nearby_body, nearby_bounds
     
 def export():
     model = Model(3, 20)
@@ -115,7 +115,7 @@ def export():
         opset_version=12, 
         do_constant_folding=True, 
         input_names=['snake_pos', 'snake_history', 'food_pos', 'bounds', 'vel'], 
-        output_names=['next_position', 'velocity'], 
+        output_names=['next_position', 'velocity', 'nearby_food', 'nearby_body', 'nearby_bounds'], 
         dynamic_axes={
             'snake_pos': {0: 'batch_size'},
             'snake_history': {0: 'sequence_length'},
@@ -177,4 +177,4 @@ def test():
     print(f"Completed in {time_b - time_a}\nAverage Forward Pass Time: {(time_b - time_a) / steps}")
 
 if __name__ == '__main__':
-    onnx_import()
+    export()

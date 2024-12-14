@@ -70,7 +70,7 @@ export default function StreamClient() {
 
   useEffect(() => {
     if (isLoaded) {
-      return
+        return
     }
 
     isLoaded = true;
