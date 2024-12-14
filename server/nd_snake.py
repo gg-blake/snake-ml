@@ -3,7 +3,6 @@ from util import NeuralNetwork, GameObject
 
 INITIAL_SCORE = 5
 
-
 class NDSnake:
     def __init__(self, n_dims, hidden_size, game_bounds, speed, ttl, turn_angle=None):
         global mutation_power
