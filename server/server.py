@@ -2,14 +2,13 @@ import torch
 import torch.nn.functional as F
 import asyncio
 import signal
-#from websockets.asyncio.server import serve
 import json
 import time
 import torch.nn as nn
 import random
 import math
 
-from snake2d import Snake, GAME_BOUNDS, INITIAL_SCORE
+from nd_snake import NDSnake, INITIAL_SCORE
 from fastapi import FastAPI, WebSocket
 from fastapi.responses import HTMLResponse
 
@@ -18,15 +17,21 @@ from fastapi.responses import HTMLResponse
 if torch.cuda.is_available():
     torch.cuda.set_device(0)
 
-INPUT_LAYER_SIZE = 6
-OUTPUT_LAYER_SIZE = 3
-HIDDEN_LAYER_SIZE = 12
+N_DIMENSIONS = 2
+DEGREES_OF_FREEDOM = (N_DIMENSIONS - 1) * N_DIMENSIONS
+INPUT_LAYER_SIZE = N_DIMENSIONS * 6 - 2
+HIDDEN_LAYER_SIZE = 20
+OUTPUT_LAYER_SIZE = DEGREES_OF_FREEDOM + 1
+GAME_BOUNDS = 10
+TTL = 200
+TURN_ANGLE = 0
+SPEED = 1
 
-n_snakes = 20
-population = [Snake(INPUT_LAYER_SIZE, HIDDEN_LAYER_SIZE, OUTPUT_LAYER_SIZE) for _ in range(n_snakes)]
-food_arr = [torch.randint(-GAME_BOUNDS, GAME_BOUNDS, (2,)).float()] 
-alpha = 0.0001
-sigma = 1
+n_snakes = 10
+population = [NDSnake(N_DIMENSIONS, HIDDEN_LAYER_SIZE, GAME_BOUNDS, SPEED, TTL, TURN_ANGLE) for _ in range(n_snakes)]
+food_arr = [torch.randint(-GAME_BOUNDS, GAME_BOUNDS, (N_DIMENSIONS,)).float()] 
+alpha = 0.001
+sigma = 0.00001
 best = 0
 W = population[0].nn.ffwd
 
@@ -40,8 +45,8 @@ N = [nn.Sequential(
 def reset(n):
     global n_snakes, population, food_arr, alpha, sigma, best
     n_snakes = n
-    population = [Snake(INPUT_LAYER_SIZE, OUTPUT_LAYER_SIZE, HIDDEN_LAYER_SIZE) for _ in range(n_snakes)]
-    food_arr = [torch.randint(-GAME_BOUNDS, GAME_BOUNDS, (2,)).float()] 
+    population = [NDSnake(N_DIMENSIONS, HIDDEN_LAYER_SIZE, GAME_BOUNDS, SPEED, TTL, TURN_ANGLE) for _ in range(n_snakes)]
+    food_arr = [torch.randint(-GAME_BOUNDS, GAME_BOUNDS, (N_DIMENSIONS,)).float()] 
     alpha = 0.0001
     sigma = 1
     best = 0
@@ -66,12 +71,13 @@ def evaluate():
     start()
 
 def refresh():
+    global food_arr
     if not any([s.alive for s in population]):
         evaluate()
     
     for i, snake in enumerate(population):
         while population[i].score - INITIAL_SCORE >= len(food_arr):
-            rand_food = torch.randint(-GAME_BOUNDS, GAME_BOUNDS, (2,)).float()
+            rand_food = torch.randint(-GAME_BOUNDS, GAME_BOUNDS, (N_DIMENSIONS,)).float()
             food_arr.append(rand_food)
             
         if not population[i].alive:
@@ -83,10 +89,7 @@ def refresh():
         
 def start():
     global food_arr, N, population
-    if len(food_arr) == 1:
-        food_arr = [torch.randint(-GAME_BOUNDS, GAME_BOUNDS, (2,)).float()]
-    else:
-        food_arr = [food_arr[-1]]
+    food_arr = [food_arr.pop()]
     
     N = [nn.Sequential(
         nn.Linear(INPUT_LAYER_SIZE, HIDDEN_LAYER_SIZE, bias=False),
@@ -95,7 +98,7 @@ def start():
         nn.ReLU()
     ) for i in range(n_snakes)]
     for j in range(n_snakes):
-        population[j].setup()
+        population[j].setup(GAME_BOUNDS, TURN_ANGLE, SPEED, TTL)
         
         for i, W_param in enumerate(N[j]):
             if isinstance(W_param, nn.ReLU):
@@ -107,10 +110,7 @@ def start():
 
 def main():
     global food_arr, W, N
-    if len(food_arr) == 1:
-        food_arr = [torch.randint(-GAME_BOUNDS, GAME_BOUNDS, (2,)).float()]
-    else:
-        food_arr = [food_arr[-1]]
+    food_arr = [food_arr.pop()]
     
     N = [nn.Sequential(
         nn.Linear(INPUT_LAYER_SIZE, HIDDEN_LAYER_SIZE, bias=False),
@@ -119,7 +119,7 @@ def main():
         nn.ReLU()
     ) for i in range(n_snakes)]
     for j in range(n_snakes):
-        population[j].setup()
+        population[j].setup(GAME_BOUNDS, TURN_ANGLE, SPEED, TTL)
         
         for i, W_param in enumerate(N[j]):
             if isinstance(W_param, nn.ReLU):
@@ -131,7 +131,7 @@ def main():
     while any([s.alive for s in population]):
         for i, snake in enumerate(population):
             while population[i].score - INITIAL_SCORE >= len(food_arr):
-                rand_food = torch.randint(-GAME_BOUNDS, GAME_BOUNDS, (2,)).float()
+                rand_food = torch.randint(-GAME_BOUNDS, GAME_BOUNDS, (N_DIMENSIONS,)).float()
                 food_arr.append(rand_food)
                 
             if not population[i].alive:
@@ -164,14 +164,15 @@ from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from signal import SIGINT, SIGTERM
 import signal
+from pydantic import BaseModel
 
 app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1"],  # Restrict access to NextJS
+    allow_origins=["*", "http://127.0.0.1"],  # Restrict access to NextJS
     allow_credentials=True,
-    allow_methods=["GET"],
+    allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
 
@@ -184,11 +185,15 @@ async def main_endpoint(client_id: str):
     try:
         while True:
             # This would be your `refresh()` logic
-            await asyncio.sleep(0.01)  # Simulate a delay for data refresh
+            await asyncio.sleep(0.05)  # Simulate a delay for data refresh
             refresh()
+            if len(food_arr) == 0:
+                rand_food = torch.randint(-GAME_BOUNDS, GAME_BOUNDS, (N_DIMENSIONS,)).float()
+                food_arr.append(rand_food)
             data = {
                 "id": client_id,
-                "snake_data": [snake.__dict__() for snake in population]  # Example data
+                "snake_data": [snake.__dict__(i) for i, snake  in enumerate(population)],  # Example data
+                "food_data": [f.tolist() for f in food_arr]
             }
             yield f"data: {json.dumps(data)}\n\n"
     except asyncio.CancelledError:
@@ -199,6 +204,43 @@ async def main_endpoint(client_id: str):
             active_clients.remove(client_id)
             print(f"Client {client_id} disconnected. Total clients: {len(active_clients)}")
 
+
+class PostBody(BaseModel):
+    n_dims: int
+    ttl: int
+    width: int
+    turn_angle: float
+    speed: float
+    n_snakes: int
+    sigma: float
+    alpha: float
+    hidden_layer_size: int
+
+@app.post("/set")
+async def set(body: PostBody):
+    global N_DIMENSIONS, DEGREES_OF_FREEDOM, INPUT_LAYER_SIZE, HIDDEN_LAYER_SIZE, OUTPUT_LAYER_SIZE, GAME_BOUNDS, TTL, TURN_ANGLE, population, alpha, sigma, food_arr, W, N, n_snakes
+    N_DIMENSIONS = body.n_dims
+    DEGREES_OF_FREEDOM = (N_DIMENSIONS - 1) * N_DIMENSIONS
+    INPUT_LAYER_SIZE = N_DIMENSIONS * 6 - 2
+    HIDDEN_LAYER_SIZE = body.hidden_layer_size
+    OUTPUT_LAYER_SIZE = DEGREES_OF_FREEDOM + 1
+    GAME_BOUNDS = body.width
+    TTL = body.ttl
+    TURN_ANGLE = body.turn_angle
+    SPEED = body.speed
+    alpha = body.alpha
+    sigma = body.sigma
+    n_snakes = body.n_snakes
+    population = [NDSnake(N_DIMENSIONS, HIDDEN_LAYER_SIZE, GAME_BOUNDS, SPEED, TTL, TURN_ANGLE) for _ in range(n_snakes)]
+    food_arr = [torch.randint(-GAME_BOUNDS, GAME_BOUNDS, (N_DIMENSIONS,)).float()] 
+    W = population[0].nn.ffwd
+
+    N = [nn.Sequential(
+        nn.Linear(INPUT_LAYER_SIZE, HIDDEN_LAYER_SIZE, bias=False),
+        nn.ReLU(),
+        nn.Linear(HIDDEN_LAYER_SIZE, OUTPUT_LAYER_SIZE, bias=False),
+        nn.ReLU()
+    ) for i in range(n_snakes)]
 
 @app.get("/stream")
 async def stream(request: Request):

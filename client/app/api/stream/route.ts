@@ -1,10 +1,11 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
+import NextCors from 'nextjs-cors';
 import http from 'http'; // Make sure http is imported
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   // Handle CORS for localhost:8000
-  res.setHeader('Access-Control-Allow-Origin', 'http://localhost');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
   // Handle preflight OPTIONS request

@@ -14,8 +14,9 @@ class NDSnake:
         self.output_size = len(self.game_object.vel.plane_ids) + 1
         self.nn = NeuralNetwork(self.input_size, hidden_size, self.output_size)
         
-    def __dict__(self):
+    def __dict__(self, uid: int):
         return {
+            "uid": uid,
             "pos": self.game_object.pos.tolist(),
             "vel": {i: v.tolist() for i, v in enumerate(self.game_object.vel.axis_lookup.values())},
             "score": self.score,
