@@ -1,0 +1,10 @@
+name: snake-ml-env
+channels:
+  - defaults
+dependencies:
+  - python=3.12
+  - pytorch::pytorch
+  - conda-forge::fastapi
+  - conda-forge::uvicorn
+  - numpy
+  - conda-forge::pydantic

@@ -119,7 +119,7 @@ class Model(nn.Module):
         
         inputs = torch.cat([nearby_food, nearby_bounds, nearby_body])
         
-        logits = (F.softmax(10 * self.ffwd(inputs)) - 0.5) * torch.pi # Shift to interval [-π/2, π/2]
+        logits = 2 * (F.softmax(10 * self.ffwd(inputs)) - 0.5) * (torch.pi / 2) # Shift to interval [-π/2, π/2]
         
         # NOTE: We will probably need to mask rotation for rotation on the plane perpendicular to the forward vector
         new_vec = self.nd_vector(logits, vel)

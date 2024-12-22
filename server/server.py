@@ -21,9 +21,9 @@ N_DIMENSIONS = 2
 DEGREES_OF_FREEDOM = (N_DIMENSIONS - 1) * N_DIMENSIONS
 INPUT_LAYER_SIZE = N_DIMENSIONS * 6 - 2
 HIDDEN_LAYER_SIZE = 20
-OUTPUT_LAYER_SIZE = DEGREES_OF_FREEDOM + 1
+OUTPUT_LAYER_SIZE = (( N_DIMENSIONS - 1 ) * N_DIMENSIONS) // 2
 GAME_BOUNDS = 10
-TTL = 200
+TTL = 100
 TURN_ANGLE = 0
 SPEED = 1
 
@@ -84,8 +84,15 @@ def refresh():
             continue
         food = food_arr[population[i].score - INITIAL_SCORE]
         inputs = population[i].get_inputs(food)
+        
         logits = population[i].nn(inputs)
-        population[i].step(int(torch.argmax(logits).item()) - 1, food)
+        
+        if TURN_ANGLE != -1:
+            logits = ((F.normalize(logits, dim=-1) - 0.5) * (torch.pi / 2))
+            population[i].step(logits, food)
+        else:
+            logits = ((F.normalize(logits, dim=-1) - 0.5) * torch.pi)
+            population[i].step(logits, food, discrete=True)
         
 def start():
     global food_arr, N, population
@@ -106,55 +113,6 @@ def start():
             
             population[j].nn.ffwd[i].weight = nn.Parameter(W_param.weight + sigma*N[j][i].weight)
 
-
-
-def main():
-    global food_arr, W, N
-    food_arr = [food_arr.pop()]
-    
-    N = [nn.Sequential(
-        nn.Linear(INPUT_LAYER_SIZE, HIDDEN_LAYER_SIZE, bias=False),
-        nn.ReLU(),
-        nn.Linear(HIDDEN_LAYER_SIZE, OUTPUT_LAYER_SIZE, bias=False),
-        nn.ReLU()
-    ) for i in range(n_snakes)]
-    for j in range(n_snakes):
-        population[j].setup(GAME_BOUNDS, TURN_ANGLE, SPEED, TTL)
-        
-        for i, W_param in enumerate(N[j]):
-            if isinstance(W_param, nn.ReLU):
-                continue
-               
-            population[j].nn.ffwd[i].weight = nn.Parameter(W_param.weight + sigma*N[j][i].weight)
-    
-    
-    while any([s.alive for s in population]):
-        for i, snake in enumerate(population):
-            while population[i].score - INITIAL_SCORE >= len(food_arr):
-                rand_food = torch.randint(-GAME_BOUNDS, GAME_BOUNDS, (N_DIMENSIONS,)).float()
-                food_arr.append(rand_food)
-                
-            if not population[i].alive:
-                continue
-            food = food_arr[population[i].score - INITIAL_SCORE]
-            inputs = population[i].get_inputs(food)
-            logits = population[i].nn(inputs)
-            population[i].step(int(torch.argmax(logits).item()) - 1, food)
-    
-    R = torch.zeros(n_snakes)
-    for i, snake in enumerate(population):
-        R[i] = snake.fitness
-    
-    # Normalize the fitness scores
-    A = (R - torch.mean(R)) / (torch.std(R))
-    
-    if torch.mean(R) > best:   
-        for i, W_param in enumerate(W):
-            if isinstance(W_param, nn.ReLU):
-                continue
-            X = torch.stack([N[n][i].weight for n in range(n_snakes)])
-            W[i].weight = nn.Parameter((W[i].weight.T + alpha/(n_snakes*sigma) * (X.T @ A)).T)
-
 # uvicorn server:app --host 0.0.0.0 --port 8000 --reload
         
 import asyncio
@@ -170,7 +128,7 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*", "http://127.0.0.1"],  # Restrict access to NextJS
+    allow_origins=["*"],  # Restrict access to NextJS
     allow_credentials=True,
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
@@ -179,7 +137,7 @@ app.add_middleware(
 # Store active clients
 active_clients = set()
 
-# Dummy data generator
+
 async def main_endpoint(client_id: str):
     """Async generator for data streaming."""
     try:
@@ -223,7 +181,7 @@ async def set(body: PostBody):
     DEGREES_OF_FREEDOM = (N_DIMENSIONS - 1) * N_DIMENSIONS
     INPUT_LAYER_SIZE = N_DIMENSIONS * 6 - 2
     HIDDEN_LAYER_SIZE = body.hidden_layer_size
-    OUTPUT_LAYER_SIZE = DEGREES_OF_FREEDOM + 1
+    OUTPUT_LAYER_SIZE = ((N_DIMENSIONS - 1) * N_DIMENSIONS) // 2
     GAME_BOUNDS = body.width
     TTL = body.ttl
     TURN_ANGLE = body.turn_angle

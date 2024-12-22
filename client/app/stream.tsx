@@ -49,10 +49,10 @@ interface Presets extends BladeState {
 }
 
 const defaultPreset: Presets = {
-  n_dims: 2,
+  n_dims: 4,
   ttl: 200,
   width: 20,
-  turn_angle: 0,
+  turn_angle: -1,
   speed: 1,
   n_snakes: 20,
   sigma: 0.001,
@@ -229,14 +229,14 @@ export default function StreamClient() {
   
 
   
-  useEffect(() => {
+  /*useEffect(() => {
     
 
     // Refresh the renderer
     if (mountRef.current && mountRef.current.hasChildNodes()) {
       mountRef.current.replaceChildren(); // Clears all previous children
     }
-  }, [viewPresets])
+  }, [viewPresets])*/
 
 
   
@@ -258,8 +258,6 @@ export default function StreamClient() {
 
     // @ts-ignore
     fetch("http://localhost:8000/set", requestOptions)
-      .then((response) => response.text())
-      .then((result) => console.log(result))
       .catch((error) => console.error(error));
 
 
@@ -410,6 +408,7 @@ export default function StreamClient() {
           const currentUID = uidLookup[snake.uid];
           
           const meshRef = snakeGroup.getObjectByProperty('uuid', currentUID)! as THREE.Mesh<THREE.BoxGeometry, THREE.MeshBasicMaterial, THREE.Object3DEventMap>;
+
           
           const materialCopy = meshRef.material.clone();
           if (!snake.alive) {
@@ -431,11 +430,28 @@ export default function StreamClient() {
             }
           }
 
-          
-          
+          if (presets.n_dims >= 4) {
+            meshRef.material = materialCopy;
+            meshRef.material.color.lerpHSL(new THREE.Color(`hsl(${((snake.pos[3] + presets.width) / (presets.width * 2)) * 360}, 78%, 63%)`), 0.5);
+          }
+
+          for( var i = scene.children.length - 1; i >= 0; i--) { 
+            let obj = meshRef.children[i];
+            meshRef.remove(obj); 
+          }
+
+
+
+          const normalMesh = new THREE.Mesh(geometry, snakeMaterialTail);
+
           const currentSnakePosition = new THREE.Vector3(...snake.pos);
+          
+          
+          
+          
+          
           const currentSnakeHistory = snake.history;
-          meshRef.position.lerp(new THREE.Vector3(...snake.pos), 1);
+          meshRef.position.lerp(currentSnakePosition, 1);
           
           currentSnakeHistory.map((pos: number[], index: number) => {
             if (index == 0) {

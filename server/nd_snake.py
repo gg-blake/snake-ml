@@ -1,5 +1,6 @@
 import torch
 from util import NeuralNetwork, GameObject
+import torch.nn.functional as F
 
 INITIAL_SCORE = 5
 
@@ -11,18 +12,19 @@ class NDSnake:
         self.setup(game_bounds, turn_angle, speed, ttl)
         self.input_size = self.n_dims * 6 - 2
         # Turn left and right on each axis of rotation plus and extra node for no turning
-        self.output_size = len(self.game_object.vel.plane_ids) + 1
+        self.output_size = len(self.game_object.vel.plane_ids)
         self.nn = NeuralNetwork(self.input_size, hidden_size, self.output_size)
         
     def __dict__(self, uid: int):
         return {
             "uid": uid,
             "pos": self.game_object.pos.tolist(),
-            "vel": {i: v.tolist() for i, v in enumerate(self.game_object.vel.axis_lookup.values())},
+            "vel": {i: v.tolist() for i, v in enumerate(self.game_object.vel.normals)},
             "score": self.score,
             "alive": self.alive,
             "history": [s.tolist() for s in self.history],
-            "fitness": self.fitness
+            "fitness": self.fitness,
+
         }
 
     def setup(self, game_bounds, turn_angle, speed, ttl):
@@ -38,26 +40,25 @@ class NDSnake:
             self.history.append(torch.tensor([-self.score + i + 1, *[0 for x in range(self.n_dims - 1)]], dtype=torch.float32))
         self.fitness = self.ttl
 
-    def step(self, key, food: torch.Tensor):
+    def step(self, logits: torch.Tensor, food: torch.Tensor, discrete=False, discrete_turn_threshold=0.1):
         if not self.alive:
             return
         
-        if key != -1:
-            if key < self.n_dims:
-                if self.turn_angle is None or self.turn_angle == 0:
-                    self.game_object.vel.turn_left(key % self.n_dims)
+        if not discrete:
+            self.game_object.vel.rotate(logits)
+        else:
+            if self.n_dims > 2:
+                if logits[torch.argmax(torch.abs(logits))] >= self.n_dims:
+                    self.game_object.vel.rotate_discrete_left(torch.argmax(torch.abs(logits)).item()  % self.n_dims)
                 else:
-                    self.game_object.vel.turn_left_angle(key % self.n_dims, self.turn_angle)
-            elif key >= self.n_dims:
-                if self.turn_angle is None or self.turn_angle == 0:
-                    self.game_object.vel.turn_right(key % self.n_dims)
-                else:
-                    self.game_object.vel.turn_right_angle(key % self.n_dims, self.turn_angle)
-        
+                    self.game_object.vel.rotate_discrete_right(torch.argmax(torch.abs(logits)).item() % self.n_dims)
+            else:
+                matrix = torch.tensor([[0, -logits[0].item()], [logits[0].item(), 0]]).unsqueeze(0).repeat(2, 1, 1)
+                self.game_object.vel.normals = F.normalize(torch.bmm(matrix, self.game_object.vel.normals.unsqueeze(1).transpose(1,2)).squeeze(-1))
 
         
 
-        next_position = self.game_object.pos + (self.game_object.vel.axis_lookup[0] * self.speed)
+        next_position = self.game_object.pos + (self.game_object.vel.normals[0] * self.speed)
         body_parts = torch.stack(self.history[:-1])
         body_collision_death = bool(torch.sum(torch.all(next_position.repeat(self.score - 1, 1) == body_parts, dim=1)).item())
         body_collision_death = torch.any((body_parts - self.game_object.pos).pow(2).sum(-1).sqrt()[:-2] < 1)
@@ -93,7 +94,8 @@ class NDSnake:
         return False
 
     def get_inputs(self, food_pos: torch.Tensor):
-        norms = torch.stack(list(self.game_object.vel.axis_lookup.values())) + self.game_object.pos.repeat(self.n_dims * 2, 1)
+        norms = (self.game_object.vel.normals * self.game_object.pos).repeat(2, 1)
+        norms[self.n_dims:] *= -1
         dist = torch.cdist(norms, torch.stack([b for b in self.history[:-1]]))
         nearby_body = torch.any(torch.cat([dist[:self.n_dims], dist[self.n_dims+1:]]) == 0, dim=1).float()
         nearby_food = torch.clamp(self.game_object.facing(food_pos), min=-1, max=1)
@@ -101,4 +103,4 @@ class NDSnake:
         nearby_bounds = torch.cat([nearby_bounds[:self.n_dims], nearby_bounds[self.n_dims+1:]])
         return torch.cat([nearby_body, nearby_food, nearby_bounds])
 
-
+    
