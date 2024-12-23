@@ -59,7 +59,7 @@ For the frontend, I am using a popular web framework called [Next.JS](https://ne
 # Challenges Faced
 ### CORS
 When attempting to communicate information using SSE from the server to client, the NextJS API was providing difficulty with establishing valid CORS headers. The most tricky part about this was the lack of information given as an error response from the server when the CORS headers were invalid.
-![[Pasted image 20241222183729.png]]
+![cors.png](https://github.com/gg-blake/snake-ml/blob/web/cors.png?raw=True)
 ### High-Dimensional Rotation
 We learned in our CS 460 course that rotations can be applied to an object by applying what is called a rotation matrix to an object's vector. We learned about rotation in 2 and 3-dimensions but for the purposes of my project, I wanted to have a rotation matrix for every possible sized vector (3, 4, 5, 6... dimensions). According to [this paper](https://naos-be.zcu.cz/server/api/core/bitstreams/c155d250-c732-4256-a9cf-33cd61f0015f/content), a n-dimensional rotation can be represented as a series of 2-dimensional rotations along different 2-d subspaces of a higher dimensional space. Implementing this algorithm for my needs was extremely time-consuming. I needed to utilize this rotation algorithm so that each logit in the output nodes of the neural network when normalized, corresponds to a degree of rotation in radians.
 
