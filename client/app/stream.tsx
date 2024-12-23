@@ -55,8 +55,8 @@ const defaultPreset: Presets = {
   turn_angle: -1,
   speed: 1,
   n_snakes: 20,
-  sigma: 0.001,
-  alpha: 0.00001,
+  sigma: 0.00001,
+  alpha: 0.001,
   hidden_layer_size: 20
 }
 
@@ -67,155 +67,160 @@ interface ViewPresets extends BladeState {
 
 const defaultViewPreset: ViewPresets = {
   colorMode: "alive",
-  viewBounds: false,
+  viewBounds: true,
 }
 
 
 function TweakPaneMenu({ params, viewParams, setParams, setViewParams }: { params: Presets, viewParams: ViewPresets, setParams: React.Dispatch<React.SetStateAction<Presets>>, setViewParams: React.Dispatch<React.SetStateAction<ViewPresets>>}) {
   const paneRef = useRef<Pane | null>(null);
+  const paneContainerRef = useRef<HTMLDivElement | null>(null);
+
 
   useEffect(() => {
-    if (!paneRef.current) {
-      paneRef.current = new Pane();
+    if (!paneRef.current && paneContainerRef.current) {
+      paneRef.current = new Pane({ container: paneContainerRef.current });
     }
 
-    // Clear all existing inputs
-    paneRef.current.children.forEach(child => paneRef.current!.remove(child));
+    if (paneRef.current) {
+      // Clear and rebuild pane
+      paneRef.current.children.forEach((child) => paneRef.current!.remove(child));
 
-    const tab = paneRef.current.addTab({
-      pages: [
-        { title: "Training"},
-        { title: "Visual" }
-      ]
-    })
+      const tab = paneRef.current.addTab({
+        pages: [{ title: "Training" }, { title: "Visual" }]
+      });
 
-    tab.pages[0].addBinding(params, 'n_dims', {
-      options: {
-        "2D": 2,
-        "3D": 3,
-        "4D": 4
-      }
-    }).on("change", (e) => {
-      setParams(prevParams => ({
-        ...prevParams,
-        "n_dims": e.value
-      }))
-    })
+      tab.pages[0].addBinding(params, 'n_dims', {
+        options: {
+          "2D": 2,
+          "3D": 3,
+          "4D": 4
+        }
+      }).on("change", (e) => {
+        if (Number.isNaN(e.value)) return;
+        setParams(prevParams => ({
+          ...prevParams,
+          "n_dims": e.value
+        }))
+      })
+  
+      tab.pages[0].addBinding(params, 'ttl', {
+        step: 25,
+        min: 100,
+        max: 1000
+      }).on("change", (e) => {
+        if (Number.isNaN(e.value)) return;
+        setParams(prevParams => ({
+          ...prevParams,
+          "ttl": e.value
+        }))
+      })
+  
+      tab.pages[0].addBinding(params, 'width', {
+        step: 1,
+        min: 10,
+        max: 100
+      }).on("change", (e) => {
+        if (Number.isNaN(e.value)) return;
+        setParams(prevParams => ({
+          ...prevParams,
+          "width": e.value
+        }))
+      })
+  
+      tab.pages[0].addBinding(params, 'turn_angle', {
+        step: Math.PI / 16,
+        min: Math.PI / 16,
+        max: Math.PI / 2
+      }).on("change", (e) => {
+        if (Number.isNaN(e.value)) return;
+        setParams(prevParams => ({
+          ...prevParams,
+          "turn_angle": e.value != Math.PI / 2 ? e.value : -1
+        }))
+      })
+  
+      tab.pages[0].addBinding(params, 'speed', {
+        step: 0.01,
+        min: 0.05,
+        max: 2
+      }).on("change", (e) => {
+        if (Number.isNaN(e.value)) return;
+        setParams(prevParams => ({
+          ...prevParams,
+          "speed": e.value
+        }))
+      })
+  
+      tab.pages[0].addBinding(params, 'n_snakes', {
+        step: 1,
+        min: 1,
+        max: 10000
+      }).on("change", (e) => {
+        if (Number.isNaN(e.value)) return;
+        setParams(prevParams => ({
+          ...prevParams,
+          "n_snakes": e.value
+        }))
+      })
+  
+      tab.pages[0].addBinding(params, 'sigma', {
+        step: 0.00001,
+        min: 0.00001,
+        max: 100
+      }).on("change", (e) => {
+        if (Number.isNaN(e.value)) return;
+        setParams(prevParams => ({
+          ...prevParams,
+          "sigma": e.value
+        }))
+      })
+  
+      tab.pages[0].addBinding(params, 'alpha', {
+        step: 0.00001,
+        min: 0.00001,
+        max: 100
+      }).on("change", (e) => {
+        if (Number.isNaN(e.value)) return;
+        setParams(prevParams => ({
+          ...prevParams,
+          "alpha": e.value
+        }))
+      })
+  
+      tab.pages[0].addBinding(params, 'hidden_layer_size', {
+        step: 1,
+        min: 1,
+        max: 100
+      }).on("change", (e) => {
+        if (Number.isNaN(e.value)) return;
+        setParams(prevParams => ({
+          ...prevParams,
+          "hidden_layer_size": e.value
+        }))
+      })
+  
+      tab.pages[1].addBinding(viewParams, 'colorMode', {
+        options: {
+          "alive": "alive",
+          "best": "best"
+        }
+      }).on("change", (e) => {
+        setViewParams(prevParams => ({
+          ...prevParams,
+          "colorMode": e.value
+        }))
+      })
 
-    tab.pages[0].addBinding(params, 'ttl', {
-      step: 25,
-      min: 100,
-      max: 1000
-    }).on("change", (e) => {
-      setParams(prevParams => ({
-        ...prevParams,
-        "ttl": e.value
-      }))
-    })
-
-    tab.pages[0].addBinding(params, 'width', {
-      step: 1,
-      min: 10,
-      max: 100
-    }).on("change", (e) => {
-      setParams(prevParams => ({
-        ...prevParams,
-        "width": e.value
-      }))
-    })
-
-    tab.pages[0].addBinding(params, 'turn_angle', {
-      step: Math.PI / 16,
-      min: Math.PI / 16,
-      max: Math.PI / 2
-    }).on("change", (e) => {
-      setParams(prevParams => ({
-        ...prevParams,
-        "turn_angle": e.value
-      }))
-    })
-
-    tab.pages[0].addBinding(params, 'speed', {
-      step: 0.01,
-      min: 0.05,
-      max: 2
-    }).on("change", (e) => {
-      setParams(prevParams => ({
-        ...prevParams,
-        "speed": e.value
-      }))
-    })
-
-    tab.pages[0].addBinding(params, 'n_snakes', {
-      step: 1,
-      min: 1,
-      max: 10000
-    }).on("change", (e) => {
-      setParams(prevParams => ({
-        ...prevParams,
-        "n_snakes": e.value
-      }))
-    })
-
-    tab.pages[0].addBinding(params, 'sigma', {
-      step: 0.00001,
-      min: 0.00001,
-      max: 100
-    }).on("change", (e) => {
-      setParams(prevParams => ({
-        ...prevParams,
-        "sigma": e.value
-      }))
-    })
-
-    tab.pages[0].addBinding(params, 'alpha', {
-      step: 0.00001,
-      min: 0.00001,
-      max: 100
-    }).on("change", (e) => {
-      setParams(prevParams => ({
-        ...prevParams,
-        "alpha": e.value
-      }))
-    })
-
-    tab.pages[0].addBinding(params, 'hidden_layer_size', {
-      step: 0.00001,
-      min: 0.00001,
-      max: 100
-    }).on("change", (e) => {
-      setParams(prevParams => ({
-        ...prevParams,
-        "hidden_layer_size": e.value
-      }))
-    })
-
-    tab.pages[1].addBinding(viewParams, 'colorMode', {
-      options: {
-        "alive": "alive",
-        "best": "best"
-      }
-    }).on("change", (e) => {
-      setViewParams(prevParams => ({
-        ...prevParams,
-        "colorMode": e.value
-      }))
-    })
-
-    tab.pages[1].addBinding(viewParams, 'viewBounds').on("change", (e) => {
-      setViewParams(prevParams => ({
-        ...prevParams,
-        "viewBounds": !e.value
-      }))
-    })
-
-    // Cleanup on component unmount
-    return () => {
-      paneRef.current?.dispose();
-    };
+      tab.pages[1].addBinding(viewParams, 'viewBounds').on("change", (e) => {
+        setViewParams(prevParams => ({
+          ...prevParams,
+          "viewBounds": !viewParams.viewBounds
+        }))
+      })
+    }
   }, []);
 
-  return <div className='w-auto absolute top left ' ref={(el) => el && paneRef.current && el.appendChild(paneRef.current.element)} />;
+  return <div className="w-auto absolute top left" ref={paneContainerRef}></div>;
 }
 
 
@@ -225,18 +230,12 @@ export default function StreamClient() {
   const [viewPresets, setViewPresets] = useState<ViewPresets>(defaultViewPreset)
   const data = useRef<StreamResponse|null>(null);
   
-  const [ready, setReady] = useState(false);
-  
-
-  
-  /*useEffect(() => {
-    
-
+  useEffect(() => {
     // Refresh the renderer
     if (mountRef.current && mountRef.current.hasChildNodes()) {
       mountRef.current.replaceChildren(); // Clears all previous children
     }
-  }, [viewPresets])*/
+  }, [viewPresets])
 
 
   
@@ -277,17 +276,18 @@ export default function StreamClient() {
 
     // Set up the camera
     const aspect = window.innerWidth / window.innerHeight;
-    const frustumSize = 10; // Controls how "zoomed in" the scene appears
+    const frustumSize = 100; // Controls how "zoomed in" the scene appears
 
     const camera = new THREE.OrthographicCamera(
       -frustumSize * aspect / 2,  // left
       frustumSize * aspect / 2,   // right
       frustumSize / 2,            // top
       -frustumSize / 2,           // bottom
-      0.1,                        // near
+      0,                        // near
       1000                        // far
     );
-    camera.position.z = 20;
+    camera.position.set(500, 500, 500)
+    
 
     // Set up the scene and renderer
     let scene = new THREE.Scene();
@@ -307,14 +307,21 @@ export default function StreamClient() {
     // Enable user camera controls
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.update();
+    controls.target.set(0, 0, 0);
 
-    const light = new THREE.DirectionalLight(0xfffaff, 1);
-    light.position.set(5, 5, 5);
+    // Scene lighting
+    const light = new THREE.DirectionalLight(0xfffaff, 20);
+    light.position.set(30, 3, 3);
     light.castShadow = true; // Allow light to cast shadows
     scene.add(light);
 
-    let uidLookup: {[key: number]: string} = {}
-    let uidLookup2: {[key: string]: string} = {}
+    
+    
+    /* To ensure that all the snake tail meshes are mapped to its head during render properly, 
+    I decided to implement a lookup table that maps the snake uid from the server to mesh uuids, 
+    I also mapped each uid to the list of its tail mesh uuids */
+    let uidLookup: {[key: number]: string} = {} // Head mesh uuid lookup table
+    let uidLookup2: {[key: string]: string} = {} // Tail mesh uuid lookup table
 
     const initSnakeMeshes = (group: THREE.Group<THREE.Object3DEventMap>) => {
       for (let i = 0; i < snakePopulation.length; i++) {
@@ -344,11 +351,10 @@ export default function StreamClient() {
 
     // Load all meshes for the snakes and add it to the snake group
     let snakeGroup = new THREE.Group();
-    // Load all meshes for the food and add it to the snake group
-    let foodGroup = new THREE.Group();
-
     initSnakeMeshes(snakeGroup);
 
+    // Load all meshes for the food and add it to the snake group
+    let foodGroup = new THREE.Group();
     scene.add(foodGroup);
 
     // Render a wireframe bounding box
@@ -365,11 +371,9 @@ export default function StreamClient() {
           return
         }
 
-        
-
         let snakePopulation = data.current.snake_data;
 
-        if (snakePopulation.every((snake: SnakeData) => !snake.alive)) {
+        if (snakePopulation.every((snake: SnakeData) => !snake.alive || snake.pos.every(p => p == 0))) {
           // Remove object uuids from lookup table
           uidLookup = {};
           uidLookup2 = {};
@@ -384,7 +388,6 @@ export default function StreamClient() {
           scene.remove(foodGroup)
           foodGroup = new THREE.Group();
           scene.add(foodGroup);
-          
         }
 
         // Calculate best snake and display the best snake (feature)
@@ -399,17 +402,11 @@ export default function StreamClient() {
           })
         }
 
+        // Render each snake and all of its assets
         snakePopulation.map((snake: SnakeData, snakeIndex: number) => {
-
-
-          let defaultColor = new THREE.Color("hsl(139, 78%, 63%)");
-          
-
           const currentUID = uidLookup[snake.uid];
-          
           const meshRef = snakeGroup.getObjectByProperty('uuid', currentUID)! as THREE.Mesh<THREE.BoxGeometry, THREE.MeshBasicMaterial, THREE.Object3DEventMap>;
 
-          
           const materialCopy = meshRef.material.clone();
           if (!snake.alive) {
             meshRef.material = materialCopy;

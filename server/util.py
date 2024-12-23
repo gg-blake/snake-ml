@@ -74,18 +74,8 @@ class NDVector:
         self.normals = expanded_normals[:self.n_dims]
         
     def rotate_discrete_right(self, dim):
-        
-        expanded_normals = self.normals.repeat(2, 1)
-        expanded_normals[self.n_dims:] *= -1
-        expanded_plane_ids = torch.flip(self.plane_ids, [1])
-        expanded_plane_ids = self.plane_ids.repeat(1, 2)
-        expanded_plane_ids[:, 2:] = expanded_plane_ids[:, 2:] + (torch.ones((((self.n_dims - 1) * self.n_dims) // 2, 2,)) * self.n_dims)
-        tmp = expanded_normals[expanded_plane_ids[dim][0]]
-        for i in range(3):
-            expanded_normals[expanded_plane_ids[dim][i]] = expanded_normals[expanded_plane_ids[dim][i+1]]
-            
-        expanded_normals[expanded_plane_ids[dim][-1]] = tmp
-        self.normals = expanded_normals[:self.n_dims]
+       for i in range(3):
+           self.rotate_discrete_left(dim)
         
 class GameObject:
     def __init__(self, n_dims):

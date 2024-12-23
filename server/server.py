@@ -87,7 +87,7 @@ def refresh():
         
         logits = population[i].nn(inputs)
         
-        if TURN_ANGLE != -1:
+        if TURN_ANGLE > 0:
             logits = ((F.normalize(logits, dim=-1) - 0.5) * (torch.pi / 2))
             population[i].step(logits, food)
         else:

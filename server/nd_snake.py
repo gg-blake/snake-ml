@@ -48,10 +48,10 @@ class NDSnake:
             self.game_object.vel.rotate(logits)
         else:
             if self.n_dims > 2:
-                if logits[torch.argmax(torch.abs(logits))] >= self.n_dims:
-                    self.game_object.vel.rotate_discrete_left(torch.argmax(torch.abs(logits)).item()  % self.n_dims)
+                if logits[torch.argmax(torch.abs(logits))] >= 0:
+                    self.game_object.vel.rotate_discrete_left(torch.argmax(torch.abs(logits)).item())
                 else:
-                    self.game_object.vel.rotate_discrete_right(torch.argmax(torch.abs(logits)).item() % self.n_dims)
+                    self.game_object.vel.rotate_discrete_right(torch.argmax(torch.abs(logits)).item())
             else:
                 matrix = torch.tensor([[0, -logits[0].item()], [logits[0].item(), 0]]).unsqueeze(0).repeat(2, 1, 1)
                 self.game_object.vel.normals = F.normalize(torch.bmm(matrix, self.game_object.vel.normals.unsqueeze(1).transpose(1,2)).squeeze(-1))
