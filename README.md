@@ -40,11 +40,11 @@ npm run dev
 # Usage
 The snake simluation can be adjusted viausally and behaviorally in a side panel in the top-left of the screen. You can adjust the number of dimensions, game size, number of snakes and some other features like learning rate and a noise parameter.
 
-![tweakpane-1.png](https://github.com/gg-blake/snake-ml/blob/web/tweakpane-1.png?raw=True)
+![tweakpane-1.png](https://github.com/gg-blake/snake-ml/blob/master/tweakpane-1.png?raw=True)
 
 In dimensions lower than 4, you can customize the color visualization. At the moment there are two vidualizations, `alive` (set by default) which highlights all snakes that are currently alive and `best` which highlights the curently best performing snake. I plan to add some more visualizations in the future so stayed tuned! Visualization mode can be access in the `Visual` tab
 
-![tweakpane-2.png](https://github.com/gg-blake/snake-ml/blob/web/tweakpane-2.png?raw=True)
+![tweakpane-2.png](https://github.com/gg-blake/snake-ml/blob/master/tweakpane-2.png?raw=True)
 
 ## Higher dimensional snake
 The program currently has the ability to simulate an infinite number of dimensions for the snake to navigate, however only the lowest 4 dimensions can be visible on the screen. If you want to go beyond the fourth dimensions (just for fun) then you can adjust the presets manually in the `client/app/stream.tsx` file. The fourth dimension of the simulation is projected to the HSL color-space where lower `w` positions in the space correspond with a snake with a red hue and higher `w` positions correspond with a purple and blue hue.
@@ -52,11 +52,11 @@ The program currently has the ability to simulate an infinite number of dimensio
 I recommend observing the fact that the snakes in the fourth and higher dimensions seem to break the rules of the game when they moves forward and backwards and loop on each other. However, they are moving in a dimension that is inaccessible to humans. This gives insight into how 3-dimensional snakes appear in 2-dimensional cross sections. 
 ### 2-dimensions
 
-![game-2d.gif](https://github.com/gg-blake/snake-ml/blob/web/game-2d.gif?raw=True)
+![game-2d.gif](https://github.com/gg-blake/snake-ml/blob/master/game-2d.gif?raw=True)
 
 ### 4-dimensions
 
-![game-4d.gif](https://github.com/gg-blake/snake-ml/blob/web/game-4d.gif?raw=True)
+![game-4d.gif](https://github.com/gg-blake/snake-ml/blob/master/game-4d.gif?raw=True)
 
 # Technologies
 The backend relied on [PyTorch](https://pytorch.org/) for running and training the models. PyTorch is an open-source machine learning library for Python that is tuned for high-performance tensor operations for machine learning.
@@ -68,7 +68,7 @@ For the frontend, I am using a popular web framework called [Next.JS](https://ne
 ### CORS
 When attempting to communicate information using SSE from the server to client, the NextJS API was providing difficulty with establishing valid CORS headers. The most tricky part about this was the lack of information given as an error response from the server when the CORS headers were invalid.
 
-![cors.png](https://github.com/gg-blake/snake-ml/blob/web/cors.png?raw=True)
+![cors.png](https://github.com/gg-blake/snake-ml/blob/master/cors.png?raw=True)
 
 ### High-Dimensional Rotation
 We learned in our CS 460 course that rotations can be applied to an object by applying what is called a rotation matrix to an object's vector. We learned about rotation in 2 and 3-dimensions but for the purposes of my project, I wanted to have a rotation matrix for every possible sized vector (3, 4, 5, 6... dimensions). According to [this paper](https://naos-be.zcu.cz/server/api/core/bitstreams/c155d250-c732-4256-a9cf-33cd61f0015f/content), a n-dimensional rotation can be represented as a series of 2-dimensional rotations along different 2-d subspaces of a higher dimensional space. Implementing this algorithm for my needs was extremely time-consuming. I needed to utilize this rotation algorithm so that each logit in the output nodes of the neural network when normalized, corresponds to a degree of rotation in radians.
