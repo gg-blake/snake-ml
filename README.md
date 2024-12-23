@@ -39,17 +39,17 @@ npm run dev
 
 # Usage
 The snake simluation can be adjusted viausally and behaviorally in a side panel in the top-left of the screen. You can adjust the number of dimensions, game size, number of snakes and some other features like learning rate and a noise parameter.
-![[Pasted image 20241222145858.png]]
+![tweakpane-1.png](https://github.com/gg-blake/snake-ml/blob/web/tweakpane-1.png?raw=True)
 In dimensions lower than 4, you can customize the color visualization. At the moment there are two vidualizations, `alive` (set by default) which highlights all snakes that are currently alive and `best` which highlights the curently best performing snake. I plan to add some more visualizations in the future so stayed tuned! Visualization mode can be access in the `Visual` tab
-![[Pasted image 20241222151002.png]]
+![tweakpane-2.png](https://github.com/gg-blake/snake-ml/blob/web/tweakpane-2.png?raw=True)
 ## Higher dimensional snake
 The program currently has the ability to simulate an infinite number of dimensions for the snake to navigate, however only the lowest 4 dimensions can be visible on the screen. If you want to go beyond the fourth dimensions (just for fun) then you can adjust the presets manually in the `client/app/stream.tsx` file. The fourth dimension of the simulation is projected to the HSL color-space where lower `w` positions in the space correspond with a snake with a red hue and higher `w` positions correspond with a purple and blue hue.
 
 I recommend observing the fact that the snakes in the fourth and higher dimensions seem to break the rules of the game when they moves forward and backwards and loop on each other. However, they are moving in a dimension that is inaccessible to humans. This gives insight into how 3-dimensional snakes appear in 2-dimensional cross sections. 
 ### 2-dimensions
-![[2024-12-2217-18-251-ezgif.com-video-to-gif-converter.gif]]
+![game-2d.png](https://github.com/gg-blake/snake-ml/blob/web/game-2d.gif?raw=True)
 ### 4-dimensions
-![[2024-12-2217-18-251-ezgif.com-video-to-gif-converter(1).gif]]
+![game-4d.png](https://github.com/gg-blake/snake-ml/blob/web/game-4d.gif?raw=True)
 # Technologies
 The backend relied on [PyTorch](https://pytorch.org/) for running and training the models. PyTorch is an open-source machine learning library for Python that is tuned for high-performance tensor operations for machine learning.
 
