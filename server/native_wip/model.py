@@ -11,6 +11,7 @@ if torch.cuda.is_available():
     sleep(2)
 
 TORCH_LOGS="dynamic"
+NUMBER_OF_DIMENSIONS = 3
 
 class NDVector(nn.Module):
     def __init__(self, n_dims: int):
@@ -79,7 +80,7 @@ class Model(nn.Module):
         self.register_buffer('out_features', torch.tensor(_out_features))
         self.register_buffer('n_dims', torch.tensor(n_dims))
         
-    def forward(self, snake_pos: torch.Tensor, snake_history: torch.Tensor, food_pos: torch.Tensor, bounds: torch.Tensor, vel: torch.Tensor):
+    def forward(self, snake_pos: torch.Tensor, nearby_body: torch.Tensor, food_pos: torch.Tensor, bounds: torch.Tensor, vel: torch.Tensor):
         # Extend basis vectors to negative axis
         signed_vel = vel.repeat(2, 1)
         signed_vel[self.n_dims:] *= -1
@@ -95,8 +96,8 @@ class Model(nn.Module):
         
         # Body data processing and vectorizing (5) (n_dims * 2 - 1)
         body_norms = signed_vel + snake_pos.repeat(self.n_dims * 2, 1)
-        body_dist = torch.cdist(body_norms, snake_history[:-1])
-        nearby_body = torch.any(torch.cat([body_dist[:self.n_dims], body_dist[self.n_dims+1:]]) == 0, dim=1).float()
+        '''body_dist = torch.cdist(body_norms, snake_history[:-1])
+        nearby_body = torch.any(torch.cat([body_dist[:self.n_dims], body_dist[self.n_dims+1:]]) == 0, dim=1).float()'''
         
         def calculate_bounds(bound_tensor: torch.Tensor) -> torch.Tensor:
             # Calculate the euclidean distance of the snake to the game boundary
@@ -124,38 +125,34 @@ class Model(nn.Module):
         # NOTE: We will probably need to mask rotation for rotation on the plane perpendicular to the forward vector
         new_vec = self.nd_vector(logits, vel)
         
-        return snake_pos + new_vec[0], new_vec, food_norms, food_dist, body_dist, calculate_bounds(bounds) 
+        return snake_pos + new_vec[0], new_vec, food_norms, food_dist, calculate_bounds(bounds) 
     
 def export():
-    model = Model(3, 20)
-    food_pos = torch.tensor([-9, 18, 3], dtype=torch.float32)
+    model = Model(NUMBER_OF_DIMENSIONS, 20)
+    food_pos = torch.randint(-10, 10, (NUMBER_OF_DIMENSIONS,), dtype=torch.float32)
     snake_pos = torch.tensor([-1, 6, -1], dtype=torch.float32)
-    snake_history = torch.randint(-10, 10, (8,3,), dtype=torch.float32)
-    bounds = torch.tensor([-1, 6, 10])
+    nearby_body = torch.zeros((NUMBER_OF_DIMENSIONS*2-1,), dtype=torch.float32)
+    bounds = torch.tensor([10 for _ in range(NUMBER_OF_DIMENSIONS)], dtype=torch.int64)
     torch.onnx.export(
         model, 
-        (snake_pos, snake_history, food_pos, bounds, model.nd_vector.normal_vectors.float()), 
-        "3D-snake.onnx", 
+        (snake_pos, nearby_body, food_pos, bounds, model.nd_vector.normal_vectors.float()), 
+        f"{NUMBER_OF_DIMENSIONS}D-model.onnx", 
         export_params=True, 
         opset_version=12, 
         do_constant_folding=True, 
-        input_names=['snake_pos', 'snake_history', 'food_pos', 'bounds', 'vel'], 
-        output_names=['next_position', 'velocity', 'food_norms', 'food_dist', 'body_dist', 'bounds_dist'], 
-        dynamic_axes={
-            'snake_pos': {0: 'batch_size'},
-            'snake_history': {0: 'sequence_length'},
-            'food_pos': {0: 'batch_size'},
-            'bounds': {0: 'batch_size'}
-        }
+        input_names=['snake_pos', 'nearby_body', 'food_pos', 'bounds', 'vel'], 
+        output_names=['next_position', 'velocity', 'food_norms', 'food_dist', 'bounds_dist'], 
     )
 
 def onnx_import():
+    
+
     # Load the ONNX model
-    ort_session = ort.InferenceSession("3D-snake.onnx")
+    ort_session = ort.InferenceSession("model.onnx")
 
     # Prepare dynamic inputs as PyTorch tensors
-    snake_pos = torch.randn(3)  # batch_size = 3, 4 dimensions
-    snake_history = torch.randn(18, 3)  # history_length = 10, 4 dimensions
+    snake_pos = torch.randn(NUMBER_OF_DIMENSIONS)  # batch_size = 3, 4 dimensions
+    nearby_body = torch.randn(NUMBER_OF_DIMENSIONS*2-1)  # history_length = 10, 4 dimensions
     food_pos = torch.randn(3)  # batch_size = 3, 4 dimensions
     bounds = torch.tensor([10, 10, 10], dtype=torch.int64)  # batch_size = 3
     vel = torch.eye(3)  # batch_size = 3, 3 dimensions
@@ -163,7 +160,7 @@ def onnx_import():
     # Convert PyTorch tensors to NumPy for ONNX Runtime
     inputs = {
         'snake_pos': snake_pos.numpy(), 
-        'snake_history': snake_history.numpy(), 
+        'nearby_body': nearby_body.numpy(), 
         'food_pos': food_pos.numpy(), 
         'bounds': bounds.numpy(), 
         'vel': vel.numpy()
@@ -183,18 +180,20 @@ def onnx_import():
     print("Next position (PyTorch Tensor):", next_position)
     print("Velocity (PyTorch Tensor):", velocity)
 
+
+
 def test():
     m = Model(3, 20)
     food_pos = torch.tensor([-9, 18, 3], dtype=torch.float32)
     snake_pos = torch.tensor([-6, -8, 1], dtype=torch.float32)
-    snake_history = torch.randint(-10, 10, (8,3,), dtype=torch.float32)
+    snake_history = torch.randint(-10, 10, (NUMBER_OF_DIMENSIONS*2-1,), dtype=torch.float32)
     bounds = torch.tensor([7, 7, 7])
     steps = 10000
     vel = NDVector(3)
     time_a = time()
-    next_position, vel = m(snake_pos, snake_history, food_pos, bounds, vel.normal_vectors.float())
+    next_position, vel, _, _, _ = m(snake_pos, snake_history, food_pos, bounds, vel.normal_vectors.float())
     for i in range(steps):
-        next_position, vel = m(next_position, snake_history, food_pos, bounds, vel)
+        next_position, vel, _, _, _ = m(next_position, snake_history, food_pos, bounds, vel)
         #os.system('cls')
         #print(f"Steps: {i}\n\nCurrent Position: {next_position}\n\nCurrent Velocity: {vel}")
     
@@ -202,4 +201,4 @@ def test():
     print(f"Completed in {time_b - time_a}\nAverage Forward Pass Time: {(time_b - time_a) / steps}")
 
 if __name__ == '__main__':
-    export()
+    test()

@@ -1,0 +1,10 @@
+conda activate onnx-tf-tmp-env
+
+onnx2tf -i 3D-model.onnx
+
+tensorflowjs_converter \
+    --input_format=tf_saved_model \
+    --output_node_names='3D-snake-tfjs-model-1' \
+    --saved_model_tags=serve \
+    saved_model \
+    web_model

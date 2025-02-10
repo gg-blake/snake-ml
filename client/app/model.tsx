@@ -112,6 +112,8 @@ class Snake {
     }
 }
 
+
+
 const snakePopulation: Snake[] = [];
 let isLoaded = false;
 const foodPositions = [new Float32Array([7, -3, 2]), new Float32Array([4, 4, -5]), new Float32Array([9, 0, 2])];
