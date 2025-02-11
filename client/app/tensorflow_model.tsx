@@ -5,7 +5,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { resolve } from 'path';
 import RenderResult from 'next/dist/server/render-result';
 import * as tf from '@tensorflow/tfjs';
-import {loadGraphModel} from '@tensorflow/tfjs-converter';
+import { loadGraphModel } from '@tensorflow/tfjs-converter';
 import * as ort from 'onnxruntime-web/training';
 import { ToonShaderHatching } from 'three/examples/jsm/Addons.js';
 
@@ -26,8 +26,8 @@ class NDVector {
 
     constructor(numberOfDimensions: number) {
         this.numberOfDimensions = numberOfDimensions;
-        this.normalVectors = tf.eye(numberOfDimensions, ...[,,], 'float32');
-        this.dimensionIndices = tf.stack(Array.from({ length: numberOfDimensions }, (_, i) => tf.tensor([i, i+numberOfDimensions], ...[,], 'float32')));
+        this.normalVectors = tf.eye(numberOfDimensions, ...[, ,], 'float32');
+        this.dimensionIndices = tf.stack(Array.from({ length: numberOfDimensions }, (_, i) => tf.tensor([i, i + numberOfDimensions], ...[,], 'float32')));
         this.planeIndices = this._initPlaneIndices();
     }
 
@@ -60,17 +60,17 @@ class NDGameObject {
     transformDirection(angles: tf.Tensor) {
         let _normalVectors = this.direction.normalVectors;
         const _basisVectors = _normalVectors.gather(this.direction.planeIndices)
-        const _basisVectorsTransposed = _basisVectors.transpose([_basisVectors.rank-1, _basisVectors.rank-2]);
+        const _basisVectorsTransposed = _basisVectors.transpose([_basisVectors.rank - 1, _basisVectors.rank - 2]);
 
-        const _m = _basisVectors.shape[_basisVectors.rank-1];
-        const _n = _basisVectors.shape[_basisVectors.rank-2];
+        const _m = _basisVectors.shape[_basisVectors.rank - 1];
+        const _n = _basisVectors.shape[_basisVectors.rank - 2];
 
         const _vProjected = tf.matMul(_basisVectors, _normalVectors);
 
         const _batchCosine = tf.cos(angles);
         const _batchSine = tf.sin(angles);
         const _rotationMatrixBuffer = tf.eye(_m).expandDims(0).tile([angles.shape[0], 1, 1]).bufferSync();
-        
+
         // Might be the root of all problems for performance but we'll address this later
         const _rot: tf.Tensor[] = [_batchCosine, _batchSine.neg(), _batchSine, _batchCosine];
         for (let i = 0; i < 4; i++) {
@@ -90,13 +90,79 @@ class NDGameObject {
             .expandDims(0)
             .tile([this.direction.planeIndices.shape[0], 1, 1])
             .add(_vRotated)
-            .euclideanNorm(_vRotated.rank-1);
+            .euclideanNorm(_vRotated.rank - 1);
 
         this.direction.normalVectors = _normalVectors;
     }
 }
 
-class DEModel {
+class SnakeModel {
+    numberOfDimensions: number;
+    gameObject: NDGameObject;
+    hiddenFeatures: number;
+    inFeatures: number;
+    outFeatures: number;
+
+    feedForward: tf.Sequential;
+
+    constructor(numberOfDimensions: number, hiddenFeatures: number) {
+        this.numberOfDimensions = numberOfDimensions;
+        this.gameObject = new NDGameObject(numberOfDimensions);
+        this.hiddenFeatures = hiddenFeatures;
+        this.inFeatures = numberOfDimensions * 6 - 2;
+        this.outFeatures = this.gameObject.direction.planeIndices.shape[0];
+        this.feedForward = this.buildLayers();
+    }
+
+    buildLayers() {
+        const feedForward = tf.sequential();
+
+        // First Linear (Dense) Layer
+        feedForward.add(tf.layers.dense({
+            units: this.hiddenFeatures,
+            inputShape: [this.inFeatures],
+            useBias: false,  // Matches PyTorch's bias=False
+            activation: 'relu' // ReLU activation
+        }));
+
+        // Second Linear (Dense) Layer
+        feedForward.add(tf.layers.dense({
+            units: this.outFeatures,
+            useBias: false,  // Matches PyTorch's bias=False
+            activation: 'relu' // ReLU activation
+        }));
+
+        return feedForward
+
+    }
+
+    forward() {
+
+
+    }
+
+    _gameLayers(snakePosition: tf.Tensor, foodPosition: tf.Tensor, bounds: tf.Tensor, velocity: tf.Tensor, snakeHistory: tf.Tensor) {
+        // Extend basis vectors to negative axis
+        const signedVelocity = tf.concat([this.gameObject.direction.normalVectors, this.gameObject.direction.normalVectors.mul(-1)]);
+
+        // Extend unit vectors to negative axis
+        const signedUnitVectors = tf.concat([tf.eye(this.gameObject.numberOfDimensions), tf.eye(this.gameObject.numberOfDimensions).mul(-1)]);
+
+        const foodNormals = tf.losses.cosineDistance(snakePosition.sub(foodPosition).tile([this.numberOfDimensions * 2, 1]), signedVelocity, 1);
+        const nearbyFood = foodNormals.clipByValue(-1, 1);
+        const foodDistance = snakePosition.sub(foodPosition).pow(2).sum(-1).sqrt();
+
+        const bodyNormals = signedVelocity.add(snakePosition.tile([this.numberOfDimensions * 2, 1]));
+        // This might be wrong (euclidean norm might not be the same as euclidean distance)
+        const bodyDistances = bodyNormals.sub(snakeHistory.slice([0, 0], [snakeHistory.shape[0] - 1, this.numberOfDimensions])).pow(2).sum(-1).sqrt();
+    }
+
+    _calculateBoundsHelper(bounds: tf.Tensor, signedUnitVectors: tf.Tensor) {
+        const boundsDistance = (bounds.mul(signedUnitVectors)).sub()
+    }
+}
+
+class DETrain {
     numberOfDimensions: number;
     populationSize: number;
     crossoverProbability: number;
@@ -114,27 +180,27 @@ class DEModel {
         for (let i = 0; i < numberOfIterations; i++) {
             for (let currentCandidateIndex = 0; currentCandidateIndex < this.populationSize; currentCandidateIndex++) {
                 const leftWeights = x.slice([0, 0], [currentCandidateIndex, HIDDEN_LAYER_SIZE]);
-                const rightWeights = x.slice([currentCandidateIndex+1, 0], [this.populationSize, HIDDEN_LAYER_SIZE]);
+                const rightWeights = x.slice([currentCandidateIndex + 1, 0], [this.populationSize, HIDDEN_LAYER_SIZE]);
                 const weightsMask = tf.concat([leftWeights, rightWeights]);
 
-                let indices = Array.from({ length: this.populationSize-1 }, (i: number) => i);
+                let indices = Array.from({ length: this.populationSize - 1 }, (i: number) => i);
                 tf.util.shuffle(indices);
 
                 const p = weightsMask.gather(tf.tensor(indices.slice(0, 3)));
-                
+
                 const currentCandidate = x.slice([currentCandidateIndex, 0], [1, HIDDEN_LAYER_SIZE])
                 const p1 = p.slice([0, 0], [1, HIDDEN_LAYER_SIZE]);
                 const p2 = p.slice([1, 0], [1, HIDDEN_LAYER_SIZE]);
                 const p3 = p.slice([2, 0], [1, HIDDEN_LAYER_SIZE]);
 
-                const rValues = tf.randomUniform([HIDDEN_LAYER_SIZE], ...[,,], "float32");
+                const rValues = tf.randomUniform([HIDDEN_LAYER_SIZE], ...[, ,], "float32");
                 const mask = rValues.greaterEqual(this.crossoverProbability)
                     .cast('int32')
 
                 const maskNegation = rValues.less(this.crossoverProbability)
                     .cast('int32')
                     .mul(currentCandidate);
-                
+
                 const newCandidate = p2
                     .sub(p3)
                     .mul(this.differentialWeight)
@@ -150,7 +216,7 @@ class DEModel {
 
 function compareCandidatesBuildModel(weights: tf.Tensor): tf.Sequential {
     const feedForward = tf.sequential();
-        
+
     // First Linear (Dense) Layer
     feedForward.add(tf.layers.dense({
         units: HIDDEN_LAYER_SIZE,
@@ -158,7 +224,7 @@ function compareCandidatesBuildModel(weights: tf.Tensor): tf.Sequential {
         useBias: false,  // Matches PyTorch's bias=False
         activation: 'relu' // ReLU activation
     }));
-    
+
     // Second Linear (Dense) Layer
     feedForward.add(tf.layers.dense({
         units: OUTPUT_LAYER_SIZE,
@@ -172,11 +238,11 @@ function compareCandidatesBuildModel(weights: tf.Tensor): tf.Sequential {
 function compareCandidatesModelForward(gameObject: NDGameObject, nearbyBody: tf.Tensor, foodPosition: tf.Tensor, bounds: tf.Tensor) {
     // Extend basis vectors to negative axis
     const signedVelocity = tf.concat([gameObject.direction.normalVectors, gameObject.direction.normalVectors.mul(-1)]);
-    
+
     // Extend unit vectors to negative axis
     const signedUnitVectors = tf.concat([tf.eye(gameObject.numberOfDimensions), tf.eye(gameObject.numberOfDimensions).mul(-1)]);
 
-    
+
 }
 
 function compareCandidates(numberOfDimensions: number, currentCandidate: tf.Tensor, newCandidate: tf.Tensor): boolean {
@@ -190,11 +256,11 @@ function compareCandidates(numberOfDimensions: number, currentCandidate: tf.Tens
 
     let currentScore = 0;
     let foodPositions = [tf.randomUniformInt([numberOfDimensions], -BOUNDS_SCALE, BOUNDS_SCALE)];
-    
+
     while (true) {
-        
+
     }
-    
+
     return false
 }
 
@@ -208,7 +274,7 @@ function createIdentityMatrix(n: number): Float32Array {
 
 function loadMesh(numberOfDimensions: number, mesh: THREE.Mesh<THREE.BoxGeometry, THREE.MeshBasicMaterial, THREE.Object3DEventMap>, position: number[]) {
     console.assert(numberOfDimensions == position.length, "Position vector should match the specified number of dimensions");
-    
+
     // Initialize snake head mesh positions
     if (numberOfDimensions == 2) {
         mesh.position.set(position[0], position[1], 0)
@@ -238,7 +304,7 @@ class Snake {
         this.numberOfDimensions = numberOfDimensions;
         this.snakePosition = tf.zeros([numberOfDimensions], 'float32');  // Shape (1, 4)
         this.snakeHistory = [this.snakePosition];
-        this.snakeBounds = tf.tensor([...Array.from({ length : this.numberOfDimensions }, () => boundsSquareSize)], [numberOfDimensions], 'int32');  // Shape (1, 4)
+        this.snakeBounds = tf.tensor([...Array.from({ length: this.numberOfDimensions }, () => boundsSquareSize)], [numberOfDimensions], 'int32');  // Shape (1, 4)
         this.snakeVelocity = tf.eye(numberOfDimensions);
         this.snakeFitness = TTL;
         this.snakeDistanceFromFood = null;
@@ -251,10 +317,10 @@ class Snake {
         console.log(model);
         for (var i = 0; i < 20; i++) {
             let logits = model.predict({
-                "snake_pos": this.snakePosition, 
-                "nearby_body": tf.tensor([0, 0, 0, 0, 0]), 
-                "food_pos": foodPosition, 
-                "bounds": this.snakeBounds, 
+                "snake_pos": this.snakePosition,
+                "nearby_body": tf.tensor([0, 0, 0, 0, 0]),
+                "food_pos": foodPosition,
+                "bounds": this.snakeBounds,
                 "vel": this.snakeVelocity
             }) as tf.Tensor<tf.Rank>[];
             this.snakePosition = logits[0].slice([0], [this.numberOfDimensions]);
@@ -262,7 +328,7 @@ class Snake {
             this.snakePosition.print();
         }
     }
-    
+
     gameUpdate(output: ort.InferenceSession.OnnxValueMapType) {
         this.snakePosition = output.next_position.cpuData;
         this.snakeVelocity = output.velocity.cpuData;
@@ -280,9 +346,9 @@ class Snake {
         }
 
         console.log(currentBoundsDistance)
-        
 
-        
+
+
         //console.log(`Current Bound: (${currentBoundsDistance[0]}, ${currentBoundsDistance[1]}, ${currentBoundsDistance[2]})\nCurrent Position: (${this.snakePosition[0]}, ${this.snakePosition[1]}, ${this.snakePosition[2]})`);
     }
 }
@@ -297,8 +363,8 @@ export default function Model() {
     const mountRef = useRef<HTMLDivElement>(null);
     const [loading, setLoading] = useState(true);
     const [results, setResults] = useState(null);
-    
-    
+
+
 
     // Load and run the ONNX model
     useEffect(() => {
@@ -307,21 +373,21 @@ export default function Model() {
         }
 
         isLoaded = true;
-        
+
         for (let i = 0; i < 5; i++) {
             snakePopulation.push(new Snake(3, 10))
         }
 
         const s = new Snake(3, 10);
         s.update();
-        
+
         /*snake.loadInferenceSession("/model.onnx")
         .then(() => setInterval(async () => {
             await snake.update([new Float32Array([-9, 3, 3])])
         }, 2000));*/
     }, []);
 
-    
+
 
     const beginSimulation = async () => {
         // Set up the camera
@@ -342,11 +408,11 @@ export default function Model() {
         const snakeMaterialHead = new THREE.MeshBasicMaterial({ color: 0x72e66c });
         const snakeMaterialTail = new THREE.MeshBasicMaterial({ color: 0x8aace3 })
         const foodMaterial = new THREE.MeshBasicMaterial({ color: 0xfaf561 });
-        
+
         // Enable user camera controls
-        const controls = new OrbitControls( camera, renderer.domElement);
+        const controls = new OrbitControls(camera, renderer.domElement);
         controls.update();
-        
+
         // Load all meshes for the snakes and add it to the snake group
         let snakeGroup = new THREE.Group();
         for (let i = 0; i < snakePopulation.length; i++) {
@@ -379,12 +445,12 @@ export default function Model() {
                 // Forward pass each snake inference model
                 await snake.update(foodPositions);
             }))
-            .then(() => snakeGroup.children.map((mesh: THREE.Object3D<THREE.Object3DEventMap>, index: number) => {
-                // Update mesh positions
-                const position = [...snakePopulation[index].snakePosition];
-                mesh.position.set(position[0], position[1], position[2]);
-            }))  
-            .finally(() => renderer.render(scene, camera))
+                .then(() => snakeGroup.children.map((mesh: THREE.Object3D<THREE.Object3DEventMap>, index: number) => {
+                    // Update mesh positions
+                    const position = [...snakePopulation[index].snakePosition];
+                    mesh.position.set(position[0], position[1], position[2]);
+                }))
+                .finally(() => renderer.render(scene, camera))
         }
 
         animate();
