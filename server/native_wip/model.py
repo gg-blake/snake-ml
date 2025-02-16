@@ -96,8 +96,9 @@ class Model(nn.Module):
         
         # Body data processing and vectorizing (5) (n_dims * 2 - 1)
         body_norms = signed_vel + snake_pos.repeat(self.n_dims * 2, 1)
-        '''body_dist = torch.cdist(body_norms, snake_history[:-1])
-        nearby_body = torch.any(torch.cat([body_dist[:self.n_dims], body_dist[self.n_dims+1:]]) == 0, dim=1).float()'''
+        snake_history = torch.stack([torch.tensor([0, 0, i], dtype=torch.float32) for i in range(10)])
+        body_dist = torch.cdist(body_norms, snake_history[:-1])
+        nearby_body = torch.any(torch.cat([body_dist[:self.n_dims], body_dist[self.n_dims+1:]]) == 0, dim=1).float()
         
         def calculate_bounds(bound_tensor: torch.Tensor) -> torch.Tensor:
             # Calculate the euclidean distance of the snake to the game boundary
