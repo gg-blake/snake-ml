@@ -4,7 +4,7 @@ import '@tensorflow/tfjs-backend-webgl';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import Renderer from './renderer';
-import { time } from 'console';
+import { forwardBatch } from './modelV2';
 
 
 const TTL = 100;
@@ -151,14 +151,14 @@ class NDGameObject {
         const _m = _basisVectorsTransposed.shape[_basisVectors.rank - 1];
         const _n = _basisVectorsTransposed.shape[_basisVectors.rank - 2];
 
-        const _vProjected = tf.matMul(_basisVectors, _normalVectors);
+        const _vProjected = tf.matMul(_basisVectors, _normalVectors.expandDims(0).tile([_basisVectors.shape[0], 1, 1]));
         
         const _batchCosine: tf.Tensor1D = tf.cos(angles);
         const _batchSine: tf.Tensor1D = tf.sin(angles);
         
         
         const _rotationMatrixIdentity: tf.Tensor3D = tf.eye(_m).expandDims(0).tile([angles.shape[0], 1, 1]);
-        const _range: tf.Tensor2D = tf.range(0, _rotationMatrixIdentity.shape[0], ...[,], "int32").expandDims().tile([4, 1]).transpose().reshape([1, _rotationMatrixIdentity.shape[0] * 4]).transpose()
+        const _range: tf.Tensor2D = tf.range(0, _rotationMatrixIdentity.shape[0], ...[,], "int32").expandDims(0).tile([4, 1]).transpose().reshape([1, _rotationMatrixIdentity.shape[0] * 4]).transpose()
         const _indices: tf.Tensor2D = tf.tensor2d([[0, 0], [0, 1], [1, 0], [1, 1]], ...[,], "int32").tile([_rotationMatrixIdentity.shape[0], 1]);
         const _repeatedIndices = tf.concat([_range, _indices], 1);
         
@@ -539,7 +539,7 @@ function projectOntoPlane(P0: tf.Tensor2D, L0: tf.Tensor2D, n: tf.Tensor2D) {
 
 function distanceFromPlane(planePoint: tf.Tensor2D, normalPoint: tf.Tensor2D, position: tf.Tensor1D, velocity: tf.Tensor2D): tf.Tensor1D {
     // Offset the plane to ensure accurate distance
-    const offsetPoint = tf.sub<tf.Tensor2D>(planePoint, position);
+    const offsetPoint = tf.sub<tf.Tensor2D>(planePoint, position.expandDims(-2).tile([planePoint.shape[0], 1]));
     // Find the point that the line from the velocity vector intersects the plane
     const intersectionPoint = projectOntoPlane(offsetPoint, velocity, normalPoint);
     // Calculate the distance between the point on the plane and the velocity vector
@@ -574,7 +574,7 @@ function getSubsetsOfSizeK<T>(arr: T[], k: number = 4): T[][] {
 }
 
 function main() {
-    const trainer = new Trainer(3, 100, 0.9, 0.8);
+    const trainer = new Trainer(4, 100, 0.9, 0.8);
 
     const animate = () => {
         
@@ -604,5 +604,7 @@ function main() {
 
     
 }
+
+main()
 
 export { SnakeModel, Trainer, NDGameObject, NDVector, BOUNDS_SCALE };
