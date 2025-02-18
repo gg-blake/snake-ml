@@ -1,6 +1,11 @@
 import * as tf from '@tensorflow/tfjs';
+import '@tensorflow/tfjs-backend-webgl';
+
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import Renderer from './renderer';
+import { time } from 'console';
+
 
 const TTL = 100;
 const INITIAL_SCORE = 5;
@@ -100,29 +105,27 @@ const foodMaterial = new THREE.MeshBasicMaterial({ color: 0x403f23 });
 
 class NDGameObject {
     numberOfDimensions: number;
-    position: tf.Tensor1D;
     direction: NDVector;
     alive: boolean;
     fitness: number;
     foodEaten: number;
     history: tf.Tensor1D[];
-    renderGroup: THREE.Group;
+    uuids: string[];
 
     constructor(numberOfDimensions: number) {
         this.numberOfDimensions = numberOfDimensions;
-        this.position = tf.zeros([this.numberOfDimensions]);
+        
         this.direction = new NDVector(this.numberOfDimensions);
         this.alive = true;
         this.fitness = TTL;
         this.foodEaten = INITIAL_SCORE;
-        this.history = this._resetHistory();
-        this.renderGroup = new THREE.Group();
-        this.render(this.renderGroup);
+        this.history = this._resetHistory(tf.zeros([numberOfDimensions]));
+        this.uuids = [];
     }
 
-    _resetHistory() {
+    _resetHistory(startPosition: tf.Tensor1D) {
         let tmp = []
-        let pos = this.position;
+        let pos = startPosition;
         for (let i = 0; i < this.foodEaten; i++) {
             tmp.push(pos);
             pos = pos.sub(tf.tensor([1, ...Array.from({length: this.numberOfDimensions-1}, (v) => 0)]))
@@ -131,15 +134,16 @@ class NDGameObject {
     }
 
     reset() {
-        this.position = tf.zeros([this.numberOfDimensions]);
         this.direction = new NDVector(this.numberOfDimensions);
         this.alive = true;
         this.fitness = TTL;
         this.foodEaten = INITIAL_SCORE;
-        this.history = this._resetHistory();
+        this.history = this._resetHistory(tf.zeros([this.numberOfDimensions]));
+        this.uuids = [];
     }
 
     transformDirection(angles: tf.Tensor1D) {
+        
         let _normalVectors = this.direction.normalVectors;
         const _basisVectors = _normalVectors.gather(this.direction.planeIndices)
         const _basisVectorsTransposed = _basisVectors.transpose([0, _basisVectors.rank - 1, _basisVectors.rank - 2]);
@@ -148,106 +152,77 @@ class NDGameObject {
         const _n = _basisVectorsTransposed.shape[_basisVectors.rank - 2];
 
         const _vProjected = tf.matMul(_basisVectors, _normalVectors);
+        
+        const _batchCosine: tf.Tensor1D = tf.cos(angles);
+        const _batchSine: tf.Tensor1D = tf.sin(angles);
+        
+        
+        const _rotationMatrixIdentity: tf.Tensor3D = tf.eye(_m).expandDims(0).tile([angles.shape[0], 1, 1]);
+        const _range: tf.Tensor2D = tf.range(0, _rotationMatrixIdentity.shape[0], ...[,], "int32").expandDims().tile([4, 1]).transpose().reshape([1, _rotationMatrixIdentity.shape[0] * 4]).transpose()
+        const _indices: tf.Tensor2D = tf.tensor2d([[0, 0], [0, 1], [1, 0], [1, 1]], ...[,], "int32").tile([_rotationMatrixIdentity.shape[0], 1]);
+        const _repeatedIndices = tf.concat([_range, _indices], 1);
+        
+        
+        const _rot: tf.Tensor1D = tf.stack<tf.Tensor1D>([_batchCosine, _batchSine.neg(), _batchSine, _batchCosine]).transpose().reshape([1, _rotationMatrixIdentity.shape[0] * 4]).squeeze();
+        
 
-        const _batchCosine = tf.cos(angles);
-        const _batchSine = tf.sin(angles);
-        const _rotationMatrixBuffer = tf.eye(_m).expandDims(0).tile([angles.shape[0], 1, 1]).bufferSync();
-
-        // Might be the root of all problems for performance but we'll address this later
-        const _rot: tf.Tensor[] = [_batchCosine, _batchSine.neg(), _batchSine, _batchCosine];
-        for (let i = 0; i < 4; i++) {
-            const firstBit = (i >> 1) & 1;
-            const secondBit = i & 1;
-            for (let j = 0; j < angles.shape[0]; j++) {
-                const _val = _rot[i].slice([j], [1]).dataSync()[0];
-                _rotationMatrixBuffer.set(_val, ...[j, firstBit, secondBit])
-            }
-        }
-
-        const _rotationMatrix = _rotationMatrixBuffer.toTensor();
+        const _rotationMatrix = tf.tensorScatterUpdate(_rotationMatrixIdentity, _repeatedIndices, _rot);
+        
         const _vRotatedProjected = tf.matMul(_rotationMatrix, _vProjected);
         const _vRotated = tf.matMul(_basisVectors, _vRotatedProjected, true, false);
 
-        /*_normalVectors = _normalVectors
-            .expandDims(0)
-            .tile([this.direction.planeIndices.shape[0], 1, 1])
-            .add(_vRotated)
-            .softmax();*/
-
         _normalVectors = normalize<tf.Tensor2D>(_vRotated.slice([0], [this.numberOfDimensions]).sum(0), 1);
-
+        
         this.direction.normalVectors = _normalVectors;
+        
     }
 
-    update(foodPosition: tf.Tensor) {
+    update(foodPosition: tf.Tensor, currentPosition: tf.Tensor1D): tf.Tensor1D {
+        
         // Snake game logic starts here
         const currentDirection = this.direction.normalVectors.slice([0], [1]).squeeze();
-        const nextPosition = this.position.add<tf.Tensor1D>(currentDirection);
+        const nextPosition = currentPosition.add<tf.Tensor1D>(currentDirection);
 
         // Enforce snake game rules
         const passiveDeath = this.fitness <=(this.foodEaten - INITIAL_SCORE) * TTL;
         const activeDeath = false;
         if (passiveDeath || activeDeath) {
             this.alive = false;
-            return
+            return currentPosition
         }
 
+        
+        
+        
         // Enforce snake fitness rules
         const nextFoodDistance = nextPosition.sub(foodPosition).square().sum(0).sqrt().arraySync() as number[];
+        
         if (nextFoodDistance[0]) {
             this.foodEaten++;
             this.fitness = TTL + 2**(this.foodEaten - INITIAL_SCORE + 1) * TTL;
         } else {
             const currentFoodDistance = nextPosition.sub(foodPosition).square().sum(0).sqrt().arraySync() as number[];
+            
+            
             if (nextFoodDistance[0] < currentFoodDistance[0]) {
                 this.fitness = this.fitness + 1;
             } else {
                 this.fitness = this.fitness - 5;
             }
         }
-
+        
+        
         // Update position
-        this.position = nextPosition;
+        //this.position = nextPosition;
 
         // Keep history length fixed
-        this.history.push(this.position);
+        this.history.push(nextPosition);
         while (this.history.length > this.foodEaten) {
             this.history.shift()
         }
-
-        // Update render objects in-place
-        for (let i = 0; i < this.history.length; i++) {
-            if (i < this.renderGroup.children.length) {
-                // Lerp to new position
-                this.renderGroup.children[i].position.lerp(new THREE.Vector3(...this.history[i].arraySync()), 1);
-                continue;
-            }
-            
-            const mesh = new THREE.Mesh(geometry, snakeMaterialHead);
-            loadMesh(mesh, this.history[i].arraySync());
-            this.renderGroup.add(mesh);
-        }
-    }
-
-    _renderHead(scene: THREE.Scene | THREE.Group) {
-        const positionArray = this.position.arraySync();
-        const mesh = new THREE.Mesh(geometry, snakeMaterialHead);
-        loadMesh(mesh, positionArray);
-        scene.add(mesh);
-    }
-
-    _renderTail(scene: THREE.Scene | THREE.Group) {
-        this.history.slice(0, this.history.length - 1).map((position: tf.Tensor1D) => {
-            const positionArray = position.arraySync();
-            const mesh = new THREE.Mesh(geometry, snakeMaterialTail);
-            loadMesh(mesh, positionArray);
-            scene.add(mesh);
-        })
-    }
-
-    render(scene: THREE.Scene | THREE.Group) {
-        this._renderTail(scene);
-        this._renderHead(scene);
+        
+        
+        return nextPosition
     }
 }
 
@@ -286,15 +261,16 @@ class SnakeModel {
         
     }
 
-    forward(foodPosition: tf.Tensor) {
-        const inputs = this._gameLayers(this.gameObject.position, foodPosition, this.gameObject.direction.normalVectors, tf.stack(this.gameObject.history)) as tf.Tensor;
-        const logits = this.feedForward.predict(inputs) as tf.Tensor1D;
+    forward(foodPosition: tf.Tensor, currentPosition: tf.Tensor1D): tf.Tensor1D {
+        const inputs = this._gameLayers(currentPosition, foodPosition, this.gameObject.direction.normalVectors, tf.stack(this.gameObject.history)) as tf.Tensor;
+        const logits = (this.feedForward.predict(inputs) as tf.Tensor2D).squeeze();
         const angles = normalize<tf.Tensor1D>(logits, 0).sub(0.5).mul<tf.Tensor1D>(Math.PI);
         this.gameObject.transformDirection(angles);
-        this.gameObject.update(foodPosition);
+        return this.gameObject.update(foodPosition, currentPosition);
     }
 
-    _gameLayers(snakePosition: tf.Tensor, foodPosition: tf.Tensor, direction: tf.Tensor, snakeHistory: tf.Tensor): tf.Tensor {
+    _gameLayers(currentPosition: tf.Tensor1D, foodPosition: tf.Tensor, direction: tf.Tensor, snakeHistory: tf.Tensor): tf.Tensor {
+        
         // Extend basis vectors to negative axis
         const signedVelocity = tf.concat([direction, direction.mul(-1)]);
 
@@ -302,32 +278,37 @@ class SnakeModel {
         const signedUnitVectors = tf.concat([tf.eye(this.numberOfDimensions), tf.eye(this.numberOfDimensions).mul(-1)]);
 
         // Food data processing and vectorizing (n_dims * 2)
-        const foodNormals = cosineSimilarity(snakePosition.sub(foodPosition).expandDims(0).tile([this.numberOfDimensions * 2, 1]), signedVelocity, 1);
+        const foodNormals = cosineSimilarity(currentPosition.sub(foodPosition).expandDims(0).tile([this.numberOfDimensions * 2, 1]), signedVelocity, 1);
         const nearbyFood = foodNormals.clipByValue(-1, 1);
-        const foodDistance = snakePosition.sub(foodPosition).pow(2).sum(-1).sqrt();
+        const foodDistance = currentPosition.sub(foodPosition).pow(2).sum(-1).sqrt();
 
         // Body data processing and vectorizing (5) (n_dims * 2 - 1)
-        const bodyNormals = signedVelocity.add(snakePosition.expandDims(0).tile([this.numberOfDimensions * 2, 1]));
+        const bodyNormals = signedVelocity.add(currentPosition.expandDims(0).tile([this.numberOfDimensions * 2, 1]));
         const snakeHistoryHeadOmitted = snakeHistory.slice([0, 0], [snakeHistory.shape[0] - 1, this.numberOfDimensions]); // Omit the head of the snake
         const bodyDistances = cdist(bodyNormals, snakeHistoryHeadOmitted);
         const nearbyBody = tf.any(tf.concat([bodyDistances.slice([0], [this.numberOfDimensions]), bodyDistances.slice([this.numberOfDimensions + 1], [this.numberOfDimensions - 1])]).equal(0), 1).cast('float32');
 
         // Bounds data processing and vectorizing (3) (n_dims * 2 - 1)
         // TODO: Add new raycasting function to determine bounds
-        const nearbyBounds = this._calculateBounds(BOUNDS_SCALE).softmax(); // This is a placeholder for new logic
+        const nearbyBounds = this._calculateBounds(BOUNDS_SCALE, currentPosition).softmax(); // This is a placeholder for new logic
 
         const inputs = tf.concat([nearbyFood, nearbyBounds, nearbyBody]);
+        
         return inputs.expandDims(0)
     }
 
-    _calculateBounds(boundTensor: tf.TensorLike): tf.Tensor1D {
+    _calculateBounds(boundTensor: tf.TensorLike, currentPosition: tf.Tensor1D): tf.Tensor1D {
         const identity = tf.eye(this.numberOfDimensions);
         const extendedIdentity = tf.concat([identity, identity.neg()]).mul<tf.Tensor2D>(boundTensor);
         const velocity = this.gameObject.direction.normalVectors;
         const extendedVelocity = tf.concat([velocity, velocity.neg()])
-        return distanceFromPlane(extendedIdentity, extendedIdentity.neg(), this.gameObject.position, extendedVelocity)
+        return distanceFromPlane(extendedIdentity, extendedIdentity.neg(), currentPosition, extendedVelocity)
     }
+
+    
 }
+
+
 
 class Trainer {
     numberOfDimensions: number;
@@ -337,12 +318,13 @@ class Trainer {
     foodArray: tf.Tensor1D[];
     currentCandidates: SnakeModel[];
     nextCandidates: SnakeModel[];
-    activeSession: boolean;
+    currentCandidatesPositions: tf.Tensor2D;
+    nextCandidatesPositions: tf.Tensor2D;
+    currentCandidateFitnesses: tf.Tensor1D;
+    nextCandidateFitnesses: tf.Tensor1D;
+    foodIds: tf.Tensor1D;
     stats: {[s: string]: number};
-    scene: THREE.Group | THREE.Scene;
-    renderer: THREE.WebGLRenderer;
-    camera: THREE.OrthographicCamera;
-    controls: OrbitControls;
+    status: string;
 
     constructor(numberOfDimensions: number, populationSize: number, crossoverProbability: number, differentialWeight: number) {
         this.numberOfDimensions = numberOfDimensions;
@@ -352,82 +334,143 @@ class Trainer {
         this.foodArray = [tf.randomUniform([numberOfDimensions])];
         this.currentCandidates = this._generateCandidates();
         this.nextCandidates = this._generateCandidates(populationSize);
-        this.activeSession = false;
+        this.currentCandidatesPositions = tf.zeros([populationSize, numberOfDimensions]);
+        this.nextCandidatesPositions = tf.zeros([populationSize, numberOfDimensions]);
+        this.currentCandidateFitnesses = tf.ones([populationSize]).mul(TTL);
+        this.nextCandidateFitnesses = tf.ones([populationSize]).mul(TTL);
+        this.foodIds = tf.zeros([populationSize], "int32");
         this.stats = {}
-        this.scene = new THREE.Scene();
-        this.loadScene(this.scene);
-        this.renderer = new THREE.WebGLRenderer();
-        this.camera = this.loadCamera();
-        this.controls = this.loadControls();
+        this.status = 'ready';
     }
 
-    async start(numberOfIterations: number, statsInterval: number) {
-        for (let i = 0; i < numberOfIterations; i++) {
-            const sessionData = await this.step()
-            if (i % statsInterval != 0) continue;
-            console.log(this.stats);
-        }
-    }
-
-    step() {
-        this.activeSession = true;
-        this.currentCandidates.map((agentX, index: number) => {
-            const indices = Array.from(Array(this.populationSize).keys()).filter((v: number) => v != index);
-            shuffle(indices);
-            const agentA = this.currentCandidates[indices[0]].feedForward.getWeights();
-            const agentB = this.currentCandidates[indices[1]].feedForward.getWeights();
-            const agentC = this.currentCandidates[indices[2]].feedForward.getWeights();
-            let weights: tf.Tensor[] = [];
-            this.currentCandidates[index].feedForward.getWeights().map((layer: tf.Tensor, layerIndex: number) => {
-                const rValues = tf.randomUniform(layer.shape, ...[, ,], "float32");
-                const mask = rValues.greaterEqual(this.crossoverProbability).cast('int32');
-                const maskNegation = layer.mul(rValues.less(this.crossoverProbability).cast('float32'));
-                weights.push(agentB[layerIndex].sub(agentC[layerIndex]).mul(this.differentialWeight).add(agentA[layerIndex]).mul(mask).add(maskNegation));
-            })
-            // Reset the indexed gameobjects
-            this.currentCandidates[index].gameObject.reset();
-            this.nextCandidates[index].gameObject.reset();
-            this.nextCandidates[index].feedForward.setWeights(weights);
-            
+    // Helper function generates next candidate from candidate at specified index to participate in the next round of training
+    generateNextCandidate(currentCandidateIndex: number) {
+        const indices = Array.from(Array(this.populationSize).keys()).filter((v: number) => v != currentCandidateIndex);
+        shuffle(indices);
+        const agentA = this.currentCandidates[indices[0]].feedForward.getWeights();
+        const agentB = this.currentCandidates[indices[1]].feedForward.getWeights();
+        const agentC = this.currentCandidates[indices[2]].feedForward.getWeights();
+        let weights: tf.Tensor[] = [];
+        this.currentCandidates[currentCandidateIndex].feedForward.getWeights().map((layer: tf.Tensor, layerIndex: number) => {
+            const rValues = tf.randomUniform(layer.shape, ...[, ,], "float32");
+            const mask = rValues.greaterEqual(this.crossoverProbability).cast('int32');
+            const maskNegation = layer.mul(rValues.less(this.crossoverProbability).cast('float32'));
+            weights.push(agentB[layerIndex].sub(agentC[layerIndex]).mul(this.differentialWeight).add(agentA[layerIndex]).mul(mask).add(maskNegation));
         })
-        this.activeSession = false;
-        this.frame();
+        this.nextCandidates[currentCandidateIndex].feedForward.setWeights(weights);
     }
 
-    frame() {
-        let atLeastOneAgentIsAlive = false;
-        for (let id = 0; id < this.populationSize; id++) {
-            // Resize the food array if needed
-            if (this.currentCandidates[id].gameObject.foodEaten - INITIAL_SCORE >= this.foodArray.length || this.nextCandidates[id].gameObject.foodEaten - INITIAL_SCORE >= this.foodArray.length) {
-                this.foodArray.push(tf.randomUniform([this.numberOfDimensions]))
-            }
+    // Reset the indexed gameobject
+    resetCandidateGameObject(candidateIndex: number, renderer?: Renderer) {
+        if (candidateIndex >= this.populationSize) {
+            throw new RangeError("Specified index exceeds the population size");
+        }
+        
+        this.currentCandidates[candidateIndex].gameObject.reset();
+        this.nextCandidates[candidateIndex].gameObject.reset();
 
-            const currentCandidateTargetFood = this.foodArray[this.currentCandidates[id].gameObject.foodEaten - INITIAL_SCORE];
-            const nextCandidateTargetFood = this.foodArray[this.nextCandidates[id].gameObject.foodEaten - INITIAL_SCORE];
-            if (this.currentCandidates[id].gameObject.alive) {
-                this.currentCandidates[id].forward(currentCandidateTargetFood);
-                atLeastOneAgentIsAlive = true;
-            }
-
-            if (this.nextCandidates[id].gameObject.alive) {
-                this.nextCandidates[id].forward(nextCandidateTargetFood);
-                atLeastOneAgentIsAlive = true;
-            }
+        if (!renderer) {
+            return
         }
 
-        this.renderer.render(this.scene, this.camera);
-        if (atLeastOneAgentIsAlive) {
-            requestAnimationFrame(this.frame);
-            return;
+        renderer.addGameObject(this.currentCandidates[candidateIndex].gameObject);
+        renderer.addGameObject(this.nextCandidates[candidateIndex].gameObject);
+    }
+
+    // Generate all of the next candidates to participate in the next round of training
+    setupCandidates(renderer?: Renderer) {
+        renderer?.resetScene();
+        for (let currentCandidateIndex = 0; currentCandidateIndex < this.populationSize; currentCandidateIndex++) {
+            this.generateNextCandidate(currentCandidateIndex);
+            this.resetCandidateGameObject(currentCandidateIndex, renderer);
+        }
+        console.log("candidates setup");
+        this.status = 'active';
+    }
+
+    // Helper function that updates the simulation for the indexed candidate by one frame
+    evaluateCandidateAnimationFrame(candidate: SnakeModel, previousPosition: tf.Tensor1D, renderer?: Renderer): tf.Tensor1D {
+        console.time("evaluateCandidateAnimationFrame");
+
+        // Resize the food array if needed
+        if (candidate.gameObject.foodEaten - INITIAL_SCORE >= this.foodArray.length) {
+            this.foodArray.push(tf.randomUniform([this.numberOfDimensions]))
         }
 
-        for (let id = 0; id < this.populationSize; id++) {
-            const currentCandidateFitness = this.currentCandidates[id].gameObject.fitness;
-            const nextCandidateFitness = this.nextCandidates[id].gameObject.fitness;
-            if (nextCandidateFitness >= currentCandidateFitness) {
-                this.currentCandidates[id].feedForward.setWeights(this.nextCandidates[id].feedForward.getWeights());
-            }
+        // Store the current target food
+        const candidateTargetFood = this.foodArray[candidate.gameObject.foodEaten - INITIAL_SCORE];
+        
+        
+        if (!candidate.gameObject.alive) {
+            return previousPosition
         }
+
+        // Perform forward pass on the current candidate model
+        const nextPosition = candidate.forward(candidateTargetFood, previousPosition);
+        this.status = 'active';
+
+        if (!renderer) {
+            return nextPosition
+        }
+
+        // Sync the game changes with the renderer
+        renderer.updateGameObject(candidate.gameObject);
+        console.timeEnd("evaluateCandidateAnimationFrame");
+        return nextPosition
+    }
+
+    
+    // Update the simulation for all candidates by one frame
+    evaluateCandidatesAnimationFrame(candidates: SnakeModel[], positions: tf.Tensor2D, fitnesses: tf.Tensor1D, renderer?: Renderer): tf.Tensor1D {
+        
+        let p: tf.Tensor1D[] = [];
+
+        // Assume the training evaluation ends following this step, unless each candidate proves otherwise
+        this.status = 'inactive';
+        for (let candidateIndex = 0; candidateIndex < this.populationSize; candidateIndex++) {
+            const previousPosition = positions.slice([candidateIndex, 0], [1, this.numberOfDimensions]).squeeze() as tf.Tensor1D;
+            p.push(this.evaluateCandidateAnimationFrame(candidates[candidateIndex], previousPosition, renderer));
+        }
+        
+        
+        const nextPositions = tf.stack(p) // (population_num, dimension_num)
+        const foodPositions = tf.gather(tf.stack(this.foodArray), this.foodIds) // (population_num, dimension_num)
+        const nextDistances = tf.squaredDifference(nextPositions, foodPositions).sum(1).sqrt(); // Euclidean distance
+        const previousDistances = tf.squaredDifference(positions, foodPositions).sum(1).sqrt();
+        const distanceDifferences = tf.sub(previousDistances, nextDistances);
+        const improvingMask = distanceDifferences.greater(0).mul(1);
+        const degradingMask = distanceDifferences.lessEqual(0).mul(-5);
+        
+        return fitnesses.add(improvingMask.add(degradingMask));
+    }
+
+    // Evaluate the current and next candidates
+    evaluatePairsAnimationFrame(renderer?: Renderer) {
+        this.currentCandidateFitnesses = this.evaluateCandidatesAnimationFrame(this.currentCandidates, this.currentCandidatesPositions, this.currentCandidateFitnesses, renderer);
+        this.nextCandidateFitnesses = this.evaluateCandidatesAnimationFrame(this.nextCandidates, this.nextCandidatesPositions, this.nextCandidateFitnesses, renderer);
+    }
+
+    evaluateCandidateAnimationEnd(candidateIndex: number) {
+        const currentCandidateFitness = this.currentCandidates[candidateIndex].gameObject.fitness;
+        const nextCandidateFitness = this.nextCandidates[candidateIndex].gameObject.fitness;
+        if (nextCandidateFitness >= currentCandidateFitness) {
+            this.currentCandidates[candidateIndex].feedForward.setWeights(this.nextCandidates[candidateIndex].feedForward.getWeights());
+        }
+    }
+
+    evaluateCandidatesAnimationEnd() {
+        // Ensure this method only occurs once per training simulation
+        if (this.status != 'inactive') {
+            return
+        }
+
+        const fitnessDifference = this.currentCandidateFitnesses.less(this.nextCandidateFitnesses).cast("float32");
+        fitnessDifference.print();
+
+        for (let candidateIndex = 0; candidateIndex < this.populationSize; candidateIndex++) {
+            this.evaluateCandidateAnimationEnd(candidateIndex);
+        }
+        this.status = 'ready'; // Flag as ready to start next training simulation
     }
 
     _generateCandidates(offset: number = 0) {
@@ -438,6 +481,10 @@ class Trainer {
         return pop
     }
 
+    debug() {
+        console.log("test");
+    }
+
     getSessionStats(data: number[][]) {
         const fitnesses = tf.tensor2d(data);
         const currentFitnesses = fitnesses.slice([0, 0], [fitnesses.shape[0], 1]).squeeze<tf.Tensor1D>().arraySync();
@@ -446,68 +493,6 @@ class Trainer {
         const nextAverageFitness = nextFitnesses.reduce((partialSum: number, a: number) => partialSum + a, 0) / this.populationSize;
         const diff = nextAverageFitness - currentAverageFitness;
         return { currentAverageFitness, nextAverageFitness, diff }
-    }
-
-    loadScene(scene: THREE.Scene) {
-        // Add current candidates to a seperate render group
-        const currentCandidatesRenderGroup = new THREE.Group();
-        this.currentCandidates.map((model: SnakeModel) => {
-            currentCandidatesRenderGroup.add(model.gameObject.renderGroup);
-        })
-        // Add next candidates to a seperate render group
-        const nextCandidatesRenderGroup = new THREE.Group();
-        this.nextCandidates.map((model: SnakeModel) => {
-            nextCandidatesRenderGroup.add(model.gameObject.renderGroup);
-        })
-        // Add food to a seperate render group
-        const foodRenderGroup = new THREE.Group();
-        this.foodArray.map((foodPosition: tf.Tensor1D) => {
-            const mesh = new THREE.Mesh(geometry, foodMaterial);
-            loadMesh(mesh, foodPosition.arraySync());
-            foodRenderGroup.add(mesh);
-        })
-
-        // Add all render groups to the scene
-        scene.add(currentCandidatesRenderGroup);
-        scene.add(nextCandidatesRenderGroup);
-        scene.add(foodRenderGroup);
-        
-        // Scene lighting
-        const light = new THREE.DirectionalLight(0xfffaff, 20);
-        light.position.set(30, 3, 3);
-        light.castShadow = true; // Allow light to cast shadows
-        scene.add(light);
-    }
-
-    loadRenderer(renderer: THREE.WebGLRenderer, mountElement: HTMLDivElement) {
-        renderer.setSize(window.innerWidth, window.innerHeight);
-        mountElement.appendChild(renderer.domElement);
-    }
-
-    loadCamera(): THREE.OrthographicCamera {
-        // Set up the camera
-        const aspect = window.innerWidth / window.innerHeight;
-        const frustumSize = 100; // Controls how "zoomed in" the scene appears
-
-        const camera = new THREE.OrthographicCamera(
-            -frustumSize * aspect / 2,  // left
-            frustumSize * aspect / 2,   // right
-            frustumSize / 2,            // top
-            -frustumSize / 2,           // bottom
-            0,                        // near
-            1000                        // far
-        );
-        camera.position.set(500, 500, 500);
-        return camera
-    }
-
-    loadControls(mountElement?: HTMLCanvasElement): OrbitControls {
-        // Enable user camera controls
-        const controls = new OrbitControls(this.camera, mountElement);
-        controls.update();
-        controls.target.set(0, 0, 0);
-
-        return controls
     }
 }
 
@@ -590,9 +575,23 @@ function getSubsetsOfSizeK<T>(arr: T[], k: number = 4): T[][] {
 
 function main() {
     const trainer = new Trainer(3, 100, 0.9, 0.8);
-    trainer.start(1000, 20);
 
+    const animate = () => {
+        
+        
 
+        
+        //console.time("evaluateCandidatesAnimationFrame")
+        trainer.evaluatePairsAnimationFrame();
+        //console.timeEnd("evaluateCandidatesAnimationFrame")
+        
+        if (trainer.status == 'active') {
+            animate()
+        }
+    }
+
+    animate();
+    trainer.evaluateCandidatesAnimationEnd()
 
     /*
     // Unit test for calculating normal vector of a plane
