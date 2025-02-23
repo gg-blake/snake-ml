@@ -3,8 +3,9 @@ import Image from "next/image";
 import StreamClient from "./stream";
 
 import { useEffect, useRef } from "react";
-import Model from "./tensorflow_model";
+
 import NativeClient from "./native";
+import Model from "./model";
 
 export default function Home() {
   

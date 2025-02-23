@@ -36,8 +36,8 @@ class NDVector(nn.Module):
         
     def forward(self, angle: torch.Tensor, X: torch.Tensor):
         basis = X[self.plane_ids].transpose(-1, -2)
-        # Q, _ = torch.linalg.qr(basis)
-        Q = basis
+        Q, _ = torch.linalg.qr(basis)
+        #Q = basis
         m = Q.shape[2]
         n = Q.shape[1]
         

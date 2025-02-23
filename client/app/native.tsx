@@ -4,13 +4,16 @@ import React, { useEffect, useState, useRef, LegacyRef } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { Pane } from "tweakpane";
-
+import * as tf from '@tensorflow/tfjs';
 import "@/app/globals.css";
 import { resolve } from 'path';
 import { use } from "react";
 import { Suspense } from "react";
 import { Trainer, SnakeModel, NDGameObject, NDVector, BOUNDS_SCALE } from './lib/model';
 import Renderer from './lib/renderer';
+import { forwardBatch, main, unitTest } from './lib/modelV2';
+import '@tensorflow/tfjs-backend-webgl';
+
 
 function loadMesh(mesh: THREE.Mesh<THREE.BoxGeometry, THREE.MeshBasicMaterial, THREE.Object3DEventMap>, position: number[]) {
     mesh.position.set(position[0], position[1], position.length > 2 ? position[2] : 0)
@@ -24,7 +27,7 @@ export default function NativeClient() {
 
     const initGame = () => {
         const mountElement = mountRef.current;
-        if (!mountElement) {
+        /*if (!mountElement) {
             throw new Error("Mount element not found");
         }
         const renderer = new Renderer(mountElement);
@@ -64,17 +67,24 @@ export default function NativeClient() {
         }
 
         animate();
-        trainer.evaluateCandidatesAnimationEnd();
+        trainer.evaluateCandidatesAnimationEnd();*/
         
     }
 
+    const handleClick = () => {
+        console.log("Loading model...");
+        unitTest();
+    }
+
     useEffect(() => {
-        initGame();
+        
+        //console.log(out);
+        //initGame();
     }, [])
 
     return (
         <div className="w-screen h-screen absolute bg-black z-[1]">
-            <div className='z-0 absolute' ref={mountRef}></div>
+            <button onClick={handleClick}>Click me</button>
         </div>
     );
 }

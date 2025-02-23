@@ -605,6 +605,4 @@ function main() {
     
 }
 
-main()
-
 export { SnakeModel, Trainer, NDGameObject, NDVector, BOUNDS_SCALE };

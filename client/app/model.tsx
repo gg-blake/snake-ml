@@ -4,19 +4,13 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { resolve } from 'path';
 import RenderResult from 'next/dist/server/render-result';
+import { forwardBatch, unitTest } from './lib/modelV2';
+import * as tf from '@tensorflow/tfjs';
+import '@tensorflow/tfjs-backend-webgl';
 
 const TTL = 100;
 const INITIAL_SCORE = 5;
 
-
-
-function createIdentityMatrix(n: number): Float32Array {
-    const identityMatrix = new Float32Array(n * n);
-    for (let i = 0; i < n; i++) {
-        identityMatrix[i * n + i] = 1; // Set the diagonal elements to 1
-    }
-    return identityMatrix;
-}
 
 function loadMesh(numberOfDimensions: number, mesh: THREE.Mesh<THREE.BoxGeometry, THREE.MeshBasicMaterial, THREE.Object3DEventMap>, position: number[]) {
     console.assert(numberOfDimensions == position.length, "Position vector should match the specified number of dimensions");
@@ -31,97 +25,18 @@ function loadMesh(numberOfDimensions: number, mesh: THREE.Mesh<THREE.BoxGeometry
     }
 }
 
-class Snake {
-    snakeScore: number;
-    numberOfDimensions: number;
-    snakePosition: Float32Array;
-    snakeHistory: Float32Array;
-    snakeBounds: BigInt64Array;
-    snakeVelocity: Float32Array;
-    snakeFitness: number;
-    snakeDistanceFromFood: number | null;
-    snakeIsAlive: boolean
-    session: ort.InferenceSession | undefined;
-
-    constructor(numberOfDimensions: number, boundsSquareSize: number) {
-        this.snakeScore = INITIAL_SCORE;
-        this.numberOfDimensions = numberOfDimensions;
-        this.snakePosition = new Float32Array([ -1, 6, -1 ]);  // Shape (1, 4)
-        this.snakeHistory = new Float32Array([...Array.from({ length: this.snakeScore * numberOfDimensions}, () => 0)]);  // Shape (8, 4)
-        this.snakeBounds = new BigInt64Array([...Array.from({ length : this.numberOfDimensions }, () => BigInt(boundsSquareSize))]);  // Shape (1, 4)
-        this.snakeVelocity = createIdentityMatrix(numberOfDimensions);
-        this.snakeFitness = TTL;
-        this.snakeDistanceFromFood = null;
-        this.snakeIsAlive = true;
-    }
-
-    async loadInferenceSession(filepath: string) {
-        try {
-            this.session = await ort.InferenceSession.create(filepath);
-        } catch (error) {
-            console.error(`Error loading inference session: ${error}`)
-        }
-    }
-
-    async update(foodPositions: Float32Array[]) {
-        if (!this.session) {
-            console.error("No inference session found");
-            return;
-        }
-        
-        if (!this.snakeIsAlive) {
-            return;
-        }
-
-        const input = {
-            'snake_pos': new ort.Tensor('float32', this.snakePosition, [this.numberOfDimensions]),
-            'snake_history': new ort.Tensor('float32', this.snakeHistory, [this.snakeScore, this.numberOfDimensions]),
-            'food_pos': new ort.Tensor('float32', foodPositions[this.snakeScore - INITIAL_SCORE], [this.numberOfDimensions]),
-            'bounds': new ort.Tensor('int64', this.snakeBounds, [this.numberOfDimensions]),
-            'vel': new ort.Tensor('float32', this.snakeVelocity, [this.numberOfDimensions, this.numberOfDimensions]),
-        };
-
-        try {
-            const output: ort.InferenceSession.OnnxValueMapType = await this.session.run(input);
-            this.gameUpdate(output);
-            
-            
-        } catch (error) {
-            console.error(`There was an error running the model: ${error}`)
-        }
-    }
-    
-    gameUpdate(output: ort.InferenceSession.OnnxValueMapType) {
-        this.snakePosition = output.next_position.cpuData;
-        this.snakeVelocity = output.velocity.cpuData;
-
-        let currentDistanceFromFood: number = output.food_dist.cpuData[0];
-        let currentBoundsDistance: Float32Array = output.bounds_dist.cpuData
-        if (!this.snakeDistanceFromFood) {
-            this.snakeDistanceFromFood = currentDistanceFromFood;
-        }
-
-        if (this.snakeDistanceFromFood - currentDistanceFromFood > 0) {
-            this.snakeFitness++;
-        } else {
-            this.snakeFitness = this.snakeFitness - 10;
-        }
-
-        console.log(currentBoundsDistance)
-        //console.log(`Current Bound: (${currentBoundsDistance[0]}, ${currentBoundsDistance[1]}, ${currentBoundsDistance[2]})\nCurrent Position: (${this.snakePosition[0]}, ${this.snakePosition[1]}, ${this.snakePosition[2]})`);
-    }
-}
 
 
 
-const snakePopulation: Snake[] = [];
-let isLoaded = false;
-const foodPositions = [new Float32Array([7, -3, 2]), new Float32Array([4, 4, -5]), new Float32Array([9, 0, 2])];
+
+
 
 export default function Model() {
     const mountRef = useRef<HTMLDivElement>(null);
     const [loading, setLoading] = useState(true);
     const [results, setResults] = useState(null);
+    
+    
     
     
 
@@ -133,15 +48,8 @@ export default function Model() {
 
         isLoaded = true;
         
-        for (let i = 0; i < 5; i++) {
-            snakePopulation.push(new Snake(3, 10))
-        }
-
-
-        Promise.all(snakePopulation.map(async (value: Snake, index: number) => {
-            await snakePopulation[index].loadInferenceSession("model.onnx");
-        }))
-        .then(() => beginSimulation())
+        
+        
         
         /*snake.loadInferenceSession("/model.onnx")
         .then(() => setInterval(async () => {
@@ -177,6 +85,7 @@ export default function Model() {
         
         // Load all meshes for the snakes and add it to the snake group
         let snakeGroup = new THREE.Group();
+        
         for (let i = 0; i < snakePopulation.length; i++) {
             // Load the snake's head's mesh and add it to the snake group
             const currentSnake: Snake = snakePopulation[i];
