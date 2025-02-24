@@ -3,7 +3,7 @@ import '@tensorflow/tfjs-backend-webgl';
 import { LayerArgs } from '@tensorflow/tfjs-layers/dist/engine/topology';
 
 
-const PLANE_INDICES = getPlaneIndices(5);
+const PLANE_INDICES = getPlaneIndices(7);
 const TTL = 100;
 
 function normalize2D(A: tf.Tensor2D, dim: number): tf.Tensor2D {
@@ -12,9 +12,9 @@ function normalize2D(A: tf.Tensor2D, dim: number): tf.Tensor2D {
     return normalized
 }
 
-function normalize3D(A: tf.Tensor3D, dim: number): tf.Tensor3D {
+function normalize3D(A: tf.Tensor3D): tf.Tensor3D {
     const norm = tf.norm(A, 'euclidean', 2);
-    const normalized = A.div<tf.Tensor3D>(norm.expandDims(-1).tile([1, 1, A.shape[2]]));
+    const normalized = A.divNoNan<tf.Tensor3D>(norm.expandDims(-1).tile([1, 1, A.shape[2]]));
     return normalized
 }
 
@@ -84,8 +84,25 @@ function rotateBatch(inputDirections: tf.Tensor3D, planeIndices: tf.Tensor3D, an
     const _rotationMatrix = tf.tensorScatterUpdate(_rotationMatrixIdentity, _repeatedIndicesBatch, _rot);
     const _vRotatedProjected = tf.matMul(_rotationMatrix, _vProjected);
     const _vRotated = tf.matMul(basisVectors.transpose([0, 1, 3, 2]), _vRotatedProjected);
-    const _vRotatedNormalized = normalize3D(_vRotated.slice([0, 0, 0], [B, C]).sum(1), 2);
+    const _vRotatedNormalized = normalize3D(_vRotated.slice([0, 0, 0], [B, C]).sum(1));
     return _vRotatedNormalized // (B, C, C)
+}
+
+function rotateBatchV2(inputDirections: tf.Tensor3D, planeIndices: tf.Tensor2D, theta: tf.Tensor1D): tf.Tensor3D {
+    // inputDirections: (B, C, C)
+    // planeIndices: (B, 2)
+    // theta: (B,)
+    const B = inputDirections.shape[0];
+    const C = inputDirections.shape[1];
+
+    const _identity: tf.Tensor3D = tf.eye(C).expandDims().tile([B, 1, 1]);
+    const _indicesAugmented1 = tf.range(0, B).expandDims(-1).tile([1, 2]).expandDims(-1).concat(planeIndices.expandDims(-1), -1);
+    const _rotationSquareIndices = planeIndices.concat(planeIndices.reverse(1), 1).expandDims(-1);
+    const _indicesAugmented2 = _indicesAugmented1.tile([1, 2, 1]).concat(_rotationSquareIndices, 2).reshape([4 * B, 3]).cast("int32");
+    const _trig = tf.stack([tf.cos(theta), tf.cos(theta), tf.sin(theta).neg(), tf.sin(theta)]).transpose().reshape([4 * B]);
+    const _rotation: tf.Tensor3D = tf.tensorScatterUpdate(_identity, _indicesAugmented2, _trig);
+    const _result = tf.matMul<tf.Tensor3D>(_rotation, inputDirections, false, true);
+    return _result
 }
 
 function projectOntoPlaneBatch(P0: tf.Tensor3D, L0: tf.Tensor3D, n: tf.Tensor3D) {
@@ -96,6 +113,19 @@ function projectOntoPlaneBatch(P0: tf.Tensor3D, L0: tf.Tensor3D, n: tf.Tensor3D)
     const div1 = tf.div<tf.Tensor1D>(dot1, dot2);
     const P = tf.add(L0, tf.mul(L, div1.expandDims(2)));
     return P
+}
+
+function projectBatchUOntoV(U: tf.Tensor3D, V: tf.Tensor3D) {
+    const B = U.shape[0];
+    const T = U.shape[1];
+    const C = U.shape[2];
+
+    const dot1 = tf.matMul(U, V, false, true);
+    const dot2 = V.square().sum(-1).expandDims(-1).tile([1, 1, T]).transpose([0, 2, 1]) // (B, T, C)
+    const div1 = tf.div(dot1, dot2).transpose([0, 2, 1]).expandDims(-1).tile([1, 1, 1, C]);
+    const dot3 = V.expandDims(-2).tile([1, 1, T, 1]);
+    const mul1 = tf.mul(div1, dot3).transpose([0, 2, 1, 3]);
+    return mul1
 }
 
 function distanceFromPlaneBatch(planePoint: tf.Tensor3D, normalPoint: tf.Tensor3D, position: tf.Tensor2D, velocity: tf.Tensor3D): tf.Tensor2D {
@@ -117,94 +147,44 @@ function cosineSimilarity(A: tf.Tensor, B: tf.Tensor, dim: number): tf.Tensor {
     return diff
 }
 
+const calculateNearbyBody = (position: tf.Tensor2D, direction: tf.Tensor3D, history: tf.Tensor3D, sensitivity: number, range: number) => tf.tidy(() => {
+    // position: (B, C)
+    // history: (B, T, C) <- T = global max food
+    const B = history.shape[0];
+    const T = history.shape[1];
+    const C = history.shape[2];
 
-function feedForward(weights: tf.Tensor[], biases?: tf.Tensor[], bias: boolean = true) {
-    if (biases == undefined && bias == true) {
-        throw new Error("Bias is expected");
-    }
-    if (biases != undefined && bias == false) {
-        throw new Error("Bias is not expected");
-    }
-    if (biases?.length != weights.length) {
-        throw new Error("Weights and biases lengths must match");
-    }
-    function forward(weight: tf.Tensor[], bias?: tf.Tensor1D[] | tf.Tensor1D) {
-        if (!weight) {
+    // Center body position at center and offset all other history position relative to the change
+    const positionBroadcasted = position.expandDims(1).tile([1, T, 1]) as tf.Tensor3D; // (B, T, C)
+    const historyRelativePosition = history.add<tf.Tensor3D>(positionBroadcasted.neg());
 
-        }
+    // Calculate cosine similarity between each direction vector and every history position
+    const dotProducts = tf.matMul(direction, historyRelativePosition, false, true);
+    const directionMaginudes = direction.square().sum(-1).sqrt().expandDims(-2) as tf.Tensor3D; // (B, C, 1)
+    const historyMagnitudes = historyRelativePosition.square().sum(-1).sqrt().expandDims(-1) as tf.Tensor2D; // (B, 1, T)
+    const magnitudeDotProducts = tf.matMul(historyMagnitudes, directionMaginudes); // (B, C, T)
+    const cosineSimilarityHistory = tf.div(dotProducts, magnitudeDotProducts.transpose([0, 2, 1])); // (B, C, T)
+    
+    // Check if any body parts are in the same direction of any of the direction vectors
+    const positiveSimilarity = tf.any(cosineSimilarityHistory.greaterEqual(sensitivity), -1).cast('int32');
+    const negativeSimilarity = tf.any(cosineSimilarityHistory.lessEqual(-sensitivity), -1).cast('int32');
 
-    }
-
-}
-
-interface CustomModelLayerConfig {
-    B: number; // The batch size
-    C: number; // The channel size (number of spatial dimensions)
-}
-class FoodDistanceLayer extends tf.layers.Layer {
-    B: number;
-    C: number;
-
-    constructor(tfConfig: LayerArgs, customConfig: CustomModelLayerConfig) {
-        super(tfConfig);
-        this.B = customConfig.B;
-        this.C = customConfig.C;
-    }
-
-    call(inputs: [tf.Tensor2D, tf.Tensor3D, tf.Tensor2D]): tf.Tensor2D {
-        // inputs[0]: positions (B, C)
-        // inputs[1]: directions (B, C, C)
-        // inputs[2]: indexedFood (B, C)
-
-        // Extend basis vectors to negative axis
-        const signedVelocity: tf.Tensor3D = tf.concat<tf.Tensor3D>([inputs[1], inputs[1].mul<tf.Tensor3D>(-1)], 1); // (B, 2 * C, C)
-        // Extend unit vectors to negative axis
-        const signedUnitVectors: tf.Tensor3D = tf.concat([tf.eye(this.C), tf.eye(this.C).mul(-1)]).expandDims().tile([this.B, 1, 1]); // (B, 2 * C, C)
-        // Food data processing and vectorizing (n_dims * 2)
-        const foodNormals: tf.Tensor2D = cosineSimilarity(inputs[0].sub(inputs[2]).expandDims(1).tile([1, this.C * 2, 1]), signedVelocity, 2) as tf.Tensor2D; // (B, 2 * C)
-        const nearbyFood: tf.Tensor2D = foodNormals.clipByValue(-1, 1) as tf.Tensor2D; // (B, 2 * C)
-        return nearbyFood
-    }
-
-    getConfig() {
-        const config = super.getConfig();
-        Object.assign(config, {B: this.B, C: this.C});
-        return config
-    }
-
-    static get className() {
-        return 'FoodDistanceLayer'
-    }
-}
-
-tf.serialization.registerClass(FoodDistanceLayer);
-
-class NearbyBoundsLayer extends tf.layers.Layer {
-    B: number;
-    C: number;
-
-    constructor(tfConfig: LayerArgs, customConfig: CustomModelLayerConfig) {
-        super(tfConfig);
-        this.B = customConfig.B;
-        this.C = customConfig.C;
-    }
-
-    call(inputs: [tf.Tensor2D, tf.Tensor3D]): tf.Tensor2D {
-        return tf.tidy(() => {
-            const identity = tf.eye(this.C);
-            const extendedIdentity = tf.concat([identity, identity.neg()]).mul<tf.Tensor2D>(10).expandDims().tile<tf.Tensor3D>([this.B, 1, 1]); // (B, 2 * C, C)
-            const extendedVelocity = tf.concat([inputs[1], inputs[1].neg()], 1); // (B, 2 * C, C)
-            const nearbyBounds: tf.Tensor2D = distanceFromPlaneBatch(extendedIdentity, extendedIdentity.neg(), inputs[0], extendedVelocity).softmax<tf.Tensor2D>(1) // (B, 2 * C)
-            return nearbyBounds
-        })
-    }
-}
+    // Calculate the euclidean distance and mask it with cosine similarity (of a certain sensitivty)
+    // Project each body part onto the given direction vector
+    const bodyProjections = projectBatchUOntoV(historyRelativePosition, direction);
+    const bodyProjectionsCapped = tf.where(bodyProjections.isNaN(), tf.fill(bodyProjections.shape, range), bodyProjections); // Replace NaN with Infinity to ignore for minimum calculation
+    const relativeDistances = bodyProjectionsCapped.square().sum(-1).sqrt().slice([0, 1, 0], [B, T-1, C]).min(-2);
+    
+    const output = tf.div(relativeDistances.tile([1, 2]), tf.concat([positiveSimilarity, negativeSimilarity], -1)).clipByValue(0, range); // (B, C * 2)
+    return output
+});
 
 
 
-const forwardBatch = (positions: tf.Tensor2D, targetIndices: tf.Tensor1D, targetPositions: tf.Tensor2D, directions: tf.Tensor3D, fitnesses: tf.Tensor1D, weights: tf.Tensor3D[]) => tf.tidy(() => {
+const forwardBatch = (positions: tf.Tensor2D, targetIndices: tf.Tensor1D, targetPositions: tf.Tensor2D, directions: tf.Tensor3D, fitnesses: tf.Tensor1D, weights: tf.Tensor3D[], history: tf.Tensor3D) => tf.tidy(() => {
     const B = positions.shape[0]; 
     const C = positions.shape[1];
+    const T = targetPositions.shape[0];
     
     
     const indexedFood = targetPositions.gather(targetIndices);
@@ -221,10 +201,8 @@ const forwardBatch = (positions: tf.Tensor2D, targetIndices: tf.Tensor1D, target
     const foodDistance = tf.squaredDifference(positions, indexedFood).sum(-1).sqrt(); // (B,)
 
     // Body data processing and vectorizing (5) (n_dims * 2 - 1)
-    /*const bodyNormals = signedVelocity.add(positions.expandDims(0).tile([this.numberOfDimensions * 2, 1]));
-    const snakeHistoryHeadOmitted = snakeHistory.slice([0, 0], [snakeHistory.shape[0] - 1, this.numberOfDimensions]); // Omit the head of the snake
-    const bodyDistances = cdist(bodyNormals, snakeHistoryHeadOmitted);
-    const nearbyBody = tf.any(tf.concat([bodyDistances.slice([0], [this.numberOfDimensions]), bodyDistances.slice([this.numberOfDimensions + 1], [this.numberOfDimensions - 1])]).equal(0), 1).cast('float32');*/
+    const nearbyBody = calculateNearbyBody(positions, directions, history, 0.95, 1000); // (B, C * 2)
+    
 
     // Bounds data processing and vectorizing (3) (n_dims * 2 - 1)
     // TODO: Add new raycasting function to determine bounds
@@ -232,7 +210,8 @@ const forwardBatch = (positions: tf.Tensor2D, targetIndices: tf.Tensor1D, target
     const extendedIdentity = tf.concat([identity, identity.neg()]).mul<tf.Tensor2D>(10).expandDims().tile<tf.Tensor3D>([B, 1, 1]); // (B, 2 * C, C)
     const extendedVelocity = tf.concat([directions, directions.neg()], 1); // (B, 2 * C, C)
     const nearbyBounds: tf.Tensor2D = distanceFromPlaneBatch(extendedIdentity, extendedIdentity.neg(), positions, extendedVelocity).softmax<tf.Tensor2D>(1) // (B, 2 * C)
-    const inputs = tf.concat([nearbyFood, nearbyBounds], 1).expandDims(-1); // (B, 4 * C)
+    const inputs = tf.concat([nearbyFood, nearbyBounds, nearbyBody], 1).expandDims(-1); // (B, 6 * C)
+    const inputsArray = inputs.arraySync() as number[][];
     
     // Feed forward linear layers (no bias)
     const hidden = tf.matMul(weights[0], inputs, false, false)
@@ -241,10 +220,11 @@ const forwardBatch = (positions: tf.Tensor2D, targetIndices: tf.Tensor1D, target
     const logitsReLU = tf.clipByValue(logits, 0, 1); // ReLU activation function
     const logitsFlattened = logits.squeeze([2]) as tf.Tensor2D; // (B, (((C-1)*C)/2))
     
+    const logitsNormalized = normalize2D(logitsFlattened, 1);
     
-    const angles = normalize2D(logitsFlattened, 1).sub(0.5).mul<tf.Tensor2D>(Math.PI); // (B, (((C-1)*C)/2))
-    console.log(angles.arraySync())
-    const nextDirections = rotateBatch(directions, PLANE_INDICES.expandDims(0).tile([B, 1, 1]), angles);
+    const indices = PLANE_INDICES.gather(logitsNormalized.sub(0.5).abs().argMax(1));
+    const angles = logitsNormalized.gather(logitsNormalized.sub(0.5).abs().argMax(1), 1, 1) as unknown as tf.Tensor1D;
+    const nextDirections = rotateBatchV2(directions, indices, angles);
     
     const nextVelocity: tf.Tensor2D = nextDirections.slice([0, 0], [B, 1]).squeeze([1]);
     const nextPositions: tf.Tensor2D = positions.add(nextVelocity);
@@ -260,8 +240,12 @@ const forwardBatch = (positions: tf.Tensor2D, targetIndices: tf.Tensor1D, target
     const isDeadMask = fitnesses.lessEqual(targetIndices.mul(TTL)).cast('int32');
     const nextFitnesses: tf.Tensor1D = fitnesses.add(improvingMask.add(degradingMask).mul(isAliveMask)).add(tf.mul(TTL, isDeadMask));
     const nextTargetIndices = targetIndices.add(touchingFood);
+
+    const cutoffMask = tf.range(0, T).expandDims().tile([B, 1]).less(nextTargetIndices.expandDims(-1).tile([1, T]).add(3)).cast('int32'); // (B, T)
+    const cutoffKeep = tf.concat([nextPositions.expandDims(1), history], 1).slice([0, 0, 0], [B, T, C]); // (B, T, C)
+    const nextHistory = cutoffKeep.div(cutoffMask.expandDims(1).tile([1, C, 1]).transpose([0, 2, 1])) as tf.Tensor3D; // (B, T, C)
     
-    return [ nextPositions, nextDirections, nextFitnesses, nextTargetIndices ]
+    return [ nextPositions, nextDirections, nextFitnesses, nextTargetIndices, nextHistory ]
 });
 
 const generateWeights = (weightsA: tf.Tensor3D[], crossoverProbability: number, differentialWeight: number): tf.Tensor3D[] => tf.tidy(() => {
@@ -327,25 +311,28 @@ function unitTest() {
     const weights = tf.tidy(() => {
         // Model unit test for minimizeBatch()
         const TTL = 100;
-        const B = 100; 
-        const C = 5; // Number of dimensions
-        const G = 4; // Number of food
-        const T = 80;
+        const B = 400; 
+        const C = 7; // Number of dimensions
+        const T = 10;
+        const INPUT_LAYER_SIZE = C * 6;
         
         
         const fitnesses: tf.Tensor1D = tf.ones([B]).mul(TTL);
         const positions: tf.Tensor2D = tf.zeros([B, C]);
-        const targetIndices: tf.Tensor1D = tf.zeros([B], 'int32');
-        const targets: tf.Tensor2D = tf.randomUniform([100, C], -10, 10);
+        const targetIndices: tf.Tensor1D = tf.randomUniformInt([B], 0, T-3, 'int32');
+        const targets: tf.Tensor2D = tf.randomUniform([T, C], -10, 10);
         const directions: tf.Tensor3D = tf.eye(C).expandDims(0).tile([B, 1, 1]);
+        const hist = tf.ones([B, T-1, C-1]).concat(tf.range(0, T-1).reshape([1, T-1]).tile([B, 1]).expandDims(-1).neg(), -1);
+        const nan = tf.div(1, tf.zeros([B, 1, C]));
+        const history = tf.concat([hist, nan], 1) as tf.Tensor3D;
         
         
-        let weightsA: tf.Tensor3D[] = ([tf.randomUniform([100, T, 4 * C]), tf.randomUniform([100, Math.floor((C - 1) * C / 2), T])]);
+        let weightsA: tf.Tensor3D[] = ([tf.randomUniform([B, T, INPUT_LAYER_SIZE]), tf.randomUniform([B, Math.floor((C - 1) * C / 2), T])]);
         for (let i = 0; i < 5; i++) {
             
             const weightsB = generateWeights(weightsA, 0.7, 0.6);
-            let [ nextPositionsA, nextDirectionsA, nextFitnessesA, nextTargetIndicesA ] = forwardBatch(positions, targetIndices, targets, directions, fitnesses, weightsA);
-            let [ nextPositionsB, nextDirectionsB, nextFitnessesB, nextTargetIndicesB ] = forwardBatch(positions, targetIndices, targets, directions, fitnesses, weightsB);
+            let [ nextPositionsA, nextDirectionsA, nextFitnessesA, nextTargetIndicesA, nextHistoryA ] = forwardBatch(positions, targetIndices, targets, directions, fitnesses, weightsA, history);
+            let [ nextPositionsB, nextDirectionsB, nextFitnessesB, nextTargetIndicesB, nextHistoryB ] = forwardBatch(positions, targetIndices, targets, directions, fitnesses, weightsB, history);
             
             for (let j = 0; j < 25; j++) {
                 if (tf.getBackend() === 'cpu') {
@@ -353,9 +340,8 @@ function unitTest() {
                 }
                 
                 console.time("forwardBatch");
-                [ nextPositionsA, nextDirectionsA, nextFitnessesA, nextTargetIndicesA ] = forwardBatch(nextPositionsA as tf.Tensor2D, nextTargetIndicesA as tf.Tensor1D, targets, directions, nextFitnessesA as tf.Tensor1D, weightsA);
-                [ nextPositionsB, nextDirectionsB, nextFitnessesB, nextTargetIndicesB ] = forwardBatch(nextPositionsB as tf.Tensor2D, nextTargetIndicesB as tf.Tensor1D, targets, directions, nextFitnessesB as tf.Tensor1D, weightsB);
-                //console.log(nextPositionsA.arraySync()[0], nextFitnessesA.arraySync(), targets.gather(nextTargetIndicesA).arraySync());
+                [ nextPositionsA, nextDirectionsA, nextFitnessesA, nextTargetIndicesA, nextHistoryA ] = forwardBatch(nextPositionsA as tf.Tensor2D, nextTargetIndicesA as tf.Tensor1D, targets, nextDirectionsA as tf.Tensor3D, nextFitnessesA as tf.Tensor1D, weightsA, nextHistoryA as tf.Tensor3D);
+                [ nextPositionsB, nextDirectionsB, nextFitnessesB, nextTargetIndicesB, nextHistoryB ] = forwardBatch(nextPositionsB as tf.Tensor2D, nextTargetIndicesB as tf.Tensor1D, targets, nextDirectionsB as tf.Tensor3D, nextFitnessesB as tf.Tensor1D, weightsB, nextHistoryB as tf.Tensor3D);
                 console.timeEnd("forwardBatch");
             }
             weightsA = compareWeights(nextFitnessesA as tf.Tensor1D, weightsA, nextFitnessesB as tf.Tensor1D, weightsB);
@@ -367,17 +353,6 @@ function unitTest() {
     weights[0].dispose();
     weights[1].dispose();
     tf.dispose(weights);
-
-
-    
-
-    
-
-
-
-    
-    
-    
-    
 }
+
 export { forwardBatch, unitTest }

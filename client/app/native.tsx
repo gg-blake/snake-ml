@@ -11,7 +11,7 @@ import { use } from "react";
 import { Suspense } from "react";
 import { Trainer, SnakeModel, NDGameObject, NDVector, BOUNDS_SCALE } from './lib/model';
 import Renderer from './lib/renderer';
-import { forwardBatch, main, unitTest } from './lib/modelV2';
+import { forwardBatch, unitTest } from './lib/modelV2';
 import '@tensorflow/tfjs-backend-webgl';
 
 
