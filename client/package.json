@@ -20,7 +20,6 @@
     "lucide-react": "^0.476.0",
     "next": "^15.1.1",
     "next-themes": "^0.4.4",
-    "onnxruntime-web": "^1.21.0-dev.20250206-d981b153d3",
     "react": "^18",
     "react-dom": "^18",
     "tailwind-merge": "^3.0.2",
@@ -29,16 +28,5 @@
     "three": "^0.171.0",
     "tsx": "^4.19.2",
     "vaul": "^1.1.2"
-  },
-  "devDependencies": {
-    "@tweakpane/core": "^2.0.5",
-    "@types/node": "^20",
-    "@types/react": "^18",
-    "@types/react-dom": "^18",
-    "eslint": "^8",
-    "eslint-config-next": "14.2.13",
-    "postcss": "^8",
-    "tailwindcss": "^3.4.1",
-    "typescript": "^5"
   }
 }
