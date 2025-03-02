@@ -4,13 +4,13 @@ import React, { useEffect, useState, useRef } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import * as tf from '@tensorflow/tfjs';
-import "@/app/globals.css";
+
 import { TTL, B, T, C, INPUT_LAYER_SIZE } from './lib/constants';
 import { batchArraySync, BatchParamsTensor, forwardBatch, compareWeights, generateWeights } from './lib/model';
 import '@tensorflow/tfjs-backend-webgl';
 import Renderer from './lib/renderer';
-import { Skeleton } from "@/components/ui/skeleton"
-import { ThemeProvider } from "@/components/theme-provider"
+import { Skeleton } from "../components/ui/skeleton"
+import { ThemeProvider } from "../components/theme-provider"
 
 import {
     Menubar,
@@ -20,7 +20,7 @@ import {
     MenubarSeparator,
     MenubarShortcut,
     MenubarTrigger,
-} from "@/components/ui/menubar"
+} from "../components/ui/menubar"
 
 const Loading = () => {
     return (
