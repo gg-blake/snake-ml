@@ -28,5 +28,8 @@
     "three": "^0.171.0",
     "tsx": "^4.19.2",
     "vaul": "^1.1.2"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.2"
   }
 }
