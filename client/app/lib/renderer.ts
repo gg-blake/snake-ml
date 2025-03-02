@@ -1,108 +1,39 @@
-import { NDGameObject } from "./model";
 import * as THREE from 'three';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { B, STARTING_SCORE } from "./constants";
+import { BatchParamsArray } from './model';
 
-const geometry = new THREE.BoxGeometry();
-const snakeMaterialHead = new THREE.MeshBasicMaterial({ color: 0x72e66c });
-const snakeMaterialTail = new THREE.MeshBasicMaterial({ color: 0x8aace3 });
-const snakeMaterialDead = new THREE.MeshBasicMaterial({ color: 0x1a1a1a });
-const foodMaterial = new THREE.MeshBasicMaterial({ color: 0x403f23 });
-
-export default class Renderer {
+class Renderer {
     scene: THREE.Scene;
     renderer: THREE.WebGLRenderer;
-    camera: THREE.OrthographicCamera;
-    light: THREE.DirectionalLight;
-    controls: OrbitControls;
+    camera: THREE.Camera;
+    uuids: {[key: number]: string[]};
+    
     // Generic geometry
     static readonly primaryGeometry = new THREE.BoxGeometry();
-    // Snake head material
-    static readonly primaryGameObjectMaterial = new THREE.MeshBasicMaterial({ color: 0x72e66c });
-    // Snake tail material
-    static readonly secondaryGameObjectMaterial = new THREE.MeshBasicMaterial({ color: 0x8aace3 });
+    // Snake head material (current population)
+    static readonly primaryGameObjectMaterialCurrent = new THREE.MeshStandardMaterial({ color: 0x72e66c, roughness: 1 });
+    // Snake tail material (current population)
+    static readonly secondaryGameObjectMaterialCurrent = new THREE.MeshStandardMaterial({ color: 0x8aace3, roughness: 1 });
+    // Snake head material (next population)
+    static readonly primaryGameObjectMaterialNext = new THREE.MeshStandardMaterial({ color: 0xe6e275, roughness: 1 });
+    // Snake tail material (next population)
+    static readonly secondaryGameObjectMaterialNext = new THREE.MeshStandardMaterial({ color: 0xf584ad, roughness: 1 });
     // Snake dead material
-    static readonly tertiaryGameObjectMaterial = new THREE.MeshBasicMaterial({ color: 0x1a1a1a });
+    static readonly tertiaryGameObjectMaterial = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 1 });
     // Food material (most recently generated food)
-    static readonly primaryFoodMaterial = new THREE.MeshBasicMaterial({ color: 0xb37e56 });
+    static readonly primaryFoodMaterial = new THREE.MeshStandardMaterial({ color: 0xb37e56, roughness: 1 });
     // Food material (older food)
-    static readonly secondaryFoodMaterial = new THREE.MeshBasicMaterial({ color: 0x403f23 });
+    static readonly secondaryFoodMaterial = new THREE.MeshStandardMaterial({ color: 0x403f23, roughness: 1 });
 
-    constructor(mountElement: HTMLCanvasElement | HTMLDivElement) {
-        this.scene = new THREE.Scene();
-        this.renderer = new THREE.WebGLRenderer();
-        this.camera = new THREE.OrthographicCamera();
-        this.light = new THREE.DirectionalLight();
-        this.controls = new OrbitControls(this.camera, mountElement);
-        this.controls.update();
-    }
-
-    // Set the camera's position and frustrum parameters
-    initCamera(frustrumParams: number[], cameraPosition: number[]) {
-        // Check if the parameters are valid
-        if (frustrumParams.length != 6) {
-            throw new RangeError("frustumPosition must be length 6");
-        }
-        if (cameraPosition.length != 3) {
-            throw new RangeError("cameraPosition must be length 3");
-        }
-
-        // Set the camera's position
-        this.camera.position.set(
-            cameraPosition[0],
-            cameraPosition[1],
-            cameraPosition[2]
-        );
-
-        // Set the camera's frustrum parameters
-        this.camera.left = frustrumParams[0];
-        this.camera.right = frustrumParams[1];
-        this.camera.top = frustrumParams[2];
-        this.camera.bottom = frustrumParams[3];
-        this.camera.near = frustrumParams[4];
-        this.camera.far = frustrumParams[5];
-    }
-
-    // Set the lights properties
-    initLight(lightPosition: number[], color: THREE.ColorRepresentation, intensity: number, castShadow: boolean) {
-        // Check if the parameters are valid
-        if (lightPosition.length != 3) {
-            throw new RangeError("lightPosition must be length 3");
-        }
-
-        // Set the light's position
-        this.light.position.set(
-            lightPosition[0],
-            lightPosition[1],
-            lightPosition[2]
-        )
-
-        // Set the light's color
-        this.light.color = new THREE.Color(color);
-        // Set the light's intensity
-        this.light.intensity = intensity;
-        // Cast shadow
-        this.light.castShadow = castShadow
-        // Add light to the scene
-        this.scene.add(this.light);
-    }
-
-    // Set the controls' position
-    initControls(controlsPosition: number[]) {
-        // Check if the parameters are valid
-        if (controlsPosition.length != 3) {
-            throw new RangeError("controlsPosition must be length 3");
-        }
-
-        // Set the controls' position
-        this.controls.target.set(
-            controlsPosition[0],
-            controlsPosition[1],
-            controlsPosition[2]
-        );
+    constructor(scene: THREE.Scene, renderer: THREE.WebGLRenderer, camera: THREE.Camera) {
+        this.scene = scene;
+        this.renderer = renderer;
+        this.camera = camera;
+        this.uuids = {}
     }
 
     // Add a position to the scene
-    addMesh(scene: THREE.Scene, position: number[], material: THREE.MeshBasicMaterial): string {
+    addMesh(scene: THREE.Scene, position: number[], material: THREE.MeshStandardMaterial): string {
         // Check if the parameters are valid
         if (position.length < 2) {
             throw new RangeError("Position must be length greater than 2");
@@ -115,28 +46,42 @@ export default class Renderer {
         return mesh.uuid
     }
 
-    // Add a game object to the scene
-    addGameObject(gameObject: NDGameObject) {
-        for (let historyIndex = 0; historyIndex < gameObject.history.length - 1; historyIndex++) {
-            const position = gameObject.history[historyIndex].arraySync();
-            const uuid = this.addMesh(this.scene, position, Renderer.secondaryGameObjectMaterial);
-            gameObject.uuids.push(uuid);
-        }
+    // Helper function adds a single population agent to the scene
+    addParam(params: BatchParamsArray, index: number, offset: number) {
+        // Initialize the storage for THREE.js mesh uuids 
+        this.uuids[index] = []
 
-        const lastPosition = gameObject.history[gameObject.history.length - 1].arraySync();
-        const lastUUID = this.addMesh(this.scene, lastPosition, Renderer.primaryGameObjectMaterial);
-        gameObject.uuids.push(lastUUID);
+        // Add mesh for the head (special material)
+        const firstPosition = params.history[index - offset][0];
+        const firstUUID = this.addMesh(this.scene, firstPosition, index < B ? Renderer.primaryGameObjectMaterialCurrent : Renderer.primaryGameObjectMaterialNext);
+        this.uuids[index].push(firstUUID);
+
+        // Add rest of the body (default material)
+        for (let historyIndex = 1; historyIndex < params.targetIndices[index - offset] + STARTING_SCORE; historyIndex++) {
+            const position: number[] = params.history[index - offset][historyIndex];
+            const uuid = this.addMesh(this.scene, position, index < B ? Renderer.secondaryGameObjectMaterialCurrent : Renderer.secondaryGameObjectMaterialNext);
+            this.uuids[index].push(uuid);
+        }
     }
 
-    // Add food to the scene
-    addFoodArray(foodArray: number[][]) {
-        for (let foodArrayIndex = 0; foodArrayIndex < foodArray.length - 1; foodArrayIndex++) {
-            const position = foodArray[foodArrayIndex];
+    // Add a population to the scene
+    addBatchParams(params: BatchParamsArray, offset: number = 0) {
+        for (let paramIndex = offset; paramIndex < B + offset; paramIndex++) {
+            this.addParam(params, paramIndex, offset);
+        }
+    }
+
+    // Add all the targets to the scene
+    addTargets(params: BatchParamsArray, targets: number[][]) {
+        // Add most recent target to scene (special material)
+        const mostRecentPosition = targets[Math.max(...params.targetIndices)];
+        this.addMesh(this.scene, mostRecentPosition, Renderer.primaryFoodMaterial);
+
+        // Add rest of the targets to the scene (default material)
+        for (let targetIndex = 0; targetIndex < Math.max(...params.targetIndices); targetIndex++) {
+            const position: number[] = targets[targetIndex];
             this.addMesh(this.scene, position, Renderer.secondaryFoodMaterial);
         }
-
-        const lastPosition = foodArray[foodArray.length - 1];
-        this.addMesh(this.scene, lastPosition, Renderer.primaryFoodMaterial);
     }
 
     // Update an existing mesh's position in the scene
@@ -157,7 +102,7 @@ export default class Renderer {
     }
 
     // Update an existing mesh's material in the scene
-    updateMeshMaterial(scene: THREE.Scene, uuid: string, newMaterial: THREE.MeshBasicMaterial) {
+    updateMeshMaterial(scene: THREE.Scene, uuid: string, newMaterial: THREE.MeshStandardMaterial) {
         const mesh = scene.getObjectByProperty('uuid', uuid);
         if (mesh == undefined) {
             throw new Error("The uuid specified could not be found");
@@ -169,30 +114,37 @@ export default class Renderer {
         mesh.material = newMaterial;
     }
 
-    // Update a game object in the scene
-    updateGameObject(gameObject: NDGameObject) {
+    // Helper function updates a single population agent in the scene
+    updateParam(params: BatchParamsArray, index: number, offset: number) {
         // Only update the meshes if gameObject is still alive
-        if (!gameObject.alive) {
+        /*if (!gameObject.alive) {
             return;
-        }
+        }*/
 
         // Update all the existing meshes' positions
-        for (let uuidsIndex = 0; uuidsIndex < gameObject.uuids.length - 1; uuidsIndex++) {
-            const position = gameObject.history[uuidsIndex].arraySync();
-            const uuid = gameObject.uuids[uuidsIndex];
+        for (let uuidsIndex = 0; uuidsIndex < this.uuids[index].length - 1; uuidsIndex++) {
+            const position = params.history[index - offset][uuidsIndex];
+            const uuid = this.uuids[index][uuidsIndex];
             this.updateMeshPosition(this.scene, uuid, position, 1);
         }
 
-        // Add new meshes to the scene that have been added to the game object's history
-        for (let historyIndex = gameObject.uuids.length; historyIndex < gameObject.history.length; historyIndex++) {
-            const position = gameObject.history[historyIndex].arraySync();
-            const uuid = this.addMesh(this.scene, position, Renderer.secondaryGameObjectMaterial);
-            gameObject.uuids.push(uuid);
+        // Add new meshes to the scene that have been added to the indexed agent's history
+        for (let historyIndex = this.uuids[index].length; historyIndex < params.targetIndices[index - offset] + STARTING_SCORE; historyIndex++) {
+            const position = params.history[index - offset][historyIndex];
+            const uuid = this.addMesh(this.scene, position, index < B ? Renderer.secondaryGameObjectMaterialCurrent : Renderer.secondaryGameObjectMaterialNext);
+            this.uuids[index].push(uuid);
         }
 
-        // Update the material type of the leading mesh in the game object's history
-        /*const lastUUID = gameObject.uuids[gameObject.uuids.length - 1];
-        this.updateMeshMaterial(this.scene, lastUUID, Renderer.secondaryGameObjectMaterial);*/
+        // Update the material type of the leading mesh in the indexed agent's history
+        const lastUUID = this.uuids[index][params.targetIndices[index - offset] + STARTING_SCORE - 1];
+        this.updateMeshMaterial(this.scene, lastUUID, index < B ? Renderer.primaryGameObjectMaterialCurrent : Renderer.primaryGameObjectMaterialNext);
+    }
+
+    // Update a population in the scene
+    updateParams(params: BatchParamsArray, offset: number = 0) {
+        for (let paramIndex = offset; paramIndex < B + offset; paramIndex++) {
+            this.updateParam(params, paramIndex, offset);
+        }
     }
 
     render() {
@@ -204,3 +156,5 @@ export default class Renderer {
         this.scene.clear();
     }
 }
+
+export default Renderer;

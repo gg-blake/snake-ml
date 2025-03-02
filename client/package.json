@@ -9,19 +9,26 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@radix-ui/react-dialog": "^1.1.6",
+    "@radix-ui/react-menubar": "^1.1.6",
+    "@radix-ui/react-slot": "^1.1.2",
     "@tensorflow/tfjs": "^4.22.0",
     "@tensorflow/tfjs-backend-webgl": "^4.22.0",
     "@types/three": "^0.170.0",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "lucide-react": "^0.476.0",
     "next": "^15.1.1",
-    "nextjs-cors": "^2.2.0",
+    "next-themes": "^0.4.4",
     "onnxruntime-web": "^1.21.0-dev.20250206-d981b153d3",
     "react": "^18",
     "react-dom": "^18",
+    "tailwind-merge": "^3.0.2",
+    "tailwindcss-animate": "^1.0.7",
     "tfjs": "^0.6.0",
     "three": "^0.171.0",
     "tsx": "^4.19.2",
-    "tweakpane": "^4.0.5",
-    "use-tweaks": "^0.3.1"
+    "vaul": "^1.1.2"
   },
   "devDependencies": {
     "@tweakpane/core": "^2.0.5",

@@ -1,135 +1,197 @@
- import React, { useEffect, useState, useRef } from 'react';
-import * as ort from 'onnxruntime-web';
+'use client';
+
+import React, { useEffect, useState, useRef } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { resolve } from 'path';
-import RenderResult from 'next/dist/server/render-result';
-import { forwardBatch, unitTest } from './lib/modelV2';
 import * as tf from '@tensorflow/tfjs';
+import "@/app/globals.css";
+import { TTL, B, T, C, INPUT_LAYER_SIZE } from './lib/constants';
+import { batchArraySync, BatchParamsTensor, forwardBatch, compareWeights, generateWeights } from './lib/model';
 import '@tensorflow/tfjs-backend-webgl';
+import Renderer from './lib/renderer';
+import { Skeleton } from "@/components/ui/skeleton"
+import { ThemeProvider } from "@/components/theme-provider"
 
-const TTL = 100;
-const INITIAL_SCORE = 5;
+import {
+    Menubar,
+    MenubarContent,
+    MenubarItem,
+    MenubarMenu,
+    MenubarSeparator,
+    MenubarShortcut,
+    MenubarTrigger,
+} from "@/components/ui/menubar"
 
-
-function loadMesh(numberOfDimensions: number, mesh: THREE.Mesh<THREE.BoxGeometry, THREE.MeshBasicMaterial, THREE.Object3DEventMap>, position: number[]) {
-    console.assert(numberOfDimensions == position.length, "Position vector should match the specified number of dimensions");
-    
-    // Initialize snake head mesh positions
-    if (numberOfDimensions == 2) {
-        mesh.position.set(position[0], position[1], 0)
-    } else if (numberOfDimensions > 2) {
-        mesh.position.set(position[0], position[1], position[2])
-    } else {
-        console.error("Dimensions must be equal or greater than 2")
-    }
+const Loading = () => {
+    return (
+        <div className='flex absolute w-screen h-screen justify-center items-center gap-4'>
+            <Skeleton className='w-[100px] h-[100px] rounded-full' />
+            <Skeleton className='w-[100px] h-[100px] rounded-full' />
+            <Skeleton className='w-[100px] h-[100px] rounded-full' />
+        </div>
+    )
 }
 
+const TensorFlowModel: React.FC = () => {
+    const containerRef = useRef<HTMLDivElement>(null);
+    const [isTfReady, setIsTfReady] = useState(false);
+    const [isStarted, setIsStarted] = useState(false);
+    const killRequest = useRef<boolean>(false);
+    const renderer = useRef<Renderer | null>(null);
 
 
-
-
-
-
-export default function Model() {
-    const mountRef = useRef<HTMLDivElement>(null);
-    const [loading, setLoading] = useState(true);
-    const [results, setResults] = useState(null);
-    
-    
-    
-    
-
-    // Load and run the ONNX model
     useEffect(() => {
-        if (isLoaded) {
-            return;
-        }
-
-        isLoaded = true;
+        console.log("page loaded")
+        let isMounted = true;
+    
+        const initializeTf = async () => {
+            await tf.setBackend('webgl');
         
-        
-        
-        
-        /*snake.loadInferenceSession("/model.onnx")
-        .then(() => setInterval(async () => {
-            await snake.update([new Float32Array([-9, 3, 3])])
-        }, 2000));*/
+            if (isMounted) {
+                setIsTfReady(true);
+            }
+        };
+    
+        initializeTf();
+    
+        return () => {
+          isMounted = false; // Cleanup in case component unmounts
+        };
     }, []);
 
-    
+    const setup = () => {
+        const canvas = document.createElement('canvas');
+        const gl = canvas.getContext('webgl2') as WebGL2RenderingContext;
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const r = new THREE.WebGLRenderer({
+            canvas,
+            context: gl,
+        });
+        r.setSize(window.innerWidth, window.innerHeight);
+        containerRef.current?.appendChild(r.domElement);
+        camera.position.z = 5;
 
-    const beginSimulation = async () => {
-        // Set up the camera
-        let camera = new THREE.OrthographicCamera();
-        camera.position.set(40, 10, 30);
-        camera.lookAt(0, 0, 0);
-        camera.zoom = 0.1;
-        camera.updateProjectionMatrix();
+        renderer.current = new Renderer(scene, r, camera);
 
-        // Set up the scene and renderer
-        let scene = new THREE.Scene();
-        const renderer = new THREE.WebGLRenderer();
-        renderer.setSize(window.innerWidth, window.innerHeight);
-        mountRef.current?.appendChild(renderer.domElement);
+        const ambientLight = new THREE.AmbientLight(0x404040); // soft white light
+        const mainLight = new THREE.DirectionalLight('white', 1);
+        mainLight.position.set(10, 10, 10);
+        renderer.current.scene.add(ambientLight);
+        renderer.current.scene.add(mainLight);
+    }
 
-        // Declare geometry and mesh materials
-        const geometry = new THREE.BoxGeometry();
-        const snakeMaterialHead = new THREE.MeshBasicMaterial({ color: 0x72e66c });
-        const snakeMaterialTail = new THREE.MeshBasicMaterial({ color: 0x8aace3 })
-        const foodMaterial = new THREE.MeshBasicMaterial({ color: 0xfaf561 });
-        
+    const start = () => tf.tidy(() => {
+        if (!(typeof window !== 'undefined' && isTfReady && !isStarted)) {
+            return
+        }
+
+        setIsStarted(true);
+        if (renderer.current === null) {
+            setup();
+        }
+
+        // Model unit test for minimizeBatch()
+        let currentParams: BatchParamsTensor = {
+            fitness: tf.ones([B]).mul(TTL) as tf.Tensor1D,
+            position: tf.zeros([B, C]),
+            targetIndices: tf.zeros([B], 'int32'),
+            direction: tf.eye(C).expandDims(0).tile([B, 1, 1]),
+            history: tf.zeros([B, T, C - 1]).concat(tf.range(0, T).reshape([1, T]).tile([B, 1]).expandDims(-1).neg(), -1) as tf.Tensor3D,
+            weights: [tf.keep(tf.randomUniform([B, T, INPUT_LAYER_SIZE])), tf.keep(tf.randomUniform([B, Math.floor((C - 1) * C / 2), T]))],
+            alive: tf.ones([B], 'int32')
+        }
+        let nextParams: BatchParamsTensor = {
+            fitness: tf.ones([B]).mul(TTL) as tf.Tensor1D,
+            position: tf.zeros([B, C]),
+            targetIndices: tf.zeros([B], 'int32'),
+            direction: tf.eye(C).expandDims(0).tile([B, 1, 1]),
+            history: tf.zeros([B, T, C - 1]).concat(tf.range(0, T).reshape([1, T]).tile([B, 1]).expandDims(-1).neg(), -1) as tf.Tensor3D,
+            weights: [tf.keep(tf.randomUniform([B, T, INPUT_LAYER_SIZE])), tf.keep(tf.randomUniform([B, Math.floor((C - 1) * C / 2), T]))],
+            alive: tf.ones([B], 'int32')
+        };
+
+        const targets: tf.Tensor2D = tf.keep(tf.randomUniform([T, C], -10, 10));
+
+        const currentParamsArray = batchArraySync(currentParams);
+        const nextParamsArray = batchArraySync(nextParams);
+        if (renderer.current === null) return
+        renderer.current.addBatchParams(currentParamsArray);
+        renderer.current.addBatchParams(nextParamsArray, B);
+
         // Enable user camera controls
-        const controls = new OrbitControls( camera, renderer.domElement);
+        const controls = new OrbitControls(renderer.current.camera, renderer.current.renderer.domElement);
         controls.update();
-        
-        // Load all meshes for the snakes and add it to the snake group
-        let snakeGroup = new THREE.Group();
-        
-        for (let i = 0; i < snakePopulation.length; i++) {
-            // Load the snake's head's mesh and add it to the snake group
-            const currentSnake: Snake = snakePopulation[i];
-            const snakeMeshHead = new THREE.Mesh(geometry, snakeMaterialTail);
-            const currentSnakePosition = [...currentSnake.snakePosition];
-            loadMesh(currentSnake.numberOfDimensions, snakeMeshHead, currentSnakePosition)
-            // @ts-ignore
-            snakeMeshHead.userData.sessionId = currentSnake.session.handler.sessionId;
-            console.log(snakeMeshHead.userData.sessionId)
-            snakeGroup.add(snakeMeshHead);
+        controls.target.set(0, 0, 0);
 
-            // Load all the snake's tail meshes and add them to the head's mesh's children
-            const currentHistory = [...currentSnake.snakeHistory]
-            for (let j = 0; j < currentHistory.length / currentSnake.numberOfDimensions; j++) {
-                const currentPos = currentHistory.slice(j * currentSnake.numberOfDimensions, (j + 1) * currentSnake.numberOfDimensions);
-                const snakeMeshTail = new THREE.Mesh(geometry, snakeMaterialTail);
-                loadMesh(currentSnake.numberOfDimensions, snakeMeshTail, currentPos);
-                snakeMeshHead.add(snakeMeshTail)
-            }
-        }
-        // Add the snakes to the scene
-        scene.add(snakeGroup);
 
-        // Animation loop
-        const animate = async () => {
-            requestAnimationFrame(animate);
-            await Promise.all(snakePopulation.map(async (snake: Snake) => {
-                // Forward pass each snake inference model
-                await snake.update(foodPositions);
-            }))
-            .then(() => snakeGroup.children.map((mesh: THREE.Object3D<THREE.Object3DEventMap>, index: number) => {
-                // Update mesh positions
-                const position = [...snakePopulation[index].snakePosition];
-                mesh.position.set(position[0], position[1], position[2]);
-            }))  
-            .finally(() => renderer.render(scene, camera))
+
+        const renderScene = () => {
+            
+            if (renderer.current === null) return
+            if (killRequest.current) return;
+
+            if (currentParams.alive.sum().arraySync() === 0 && nextParams.alive.sum().arraySync() === 0) {
+                currentParams = compareWeights(currentParams.fitness, currentParams.weights, nextParams.fitness, nextParams.weights);
+                nextParams = generateWeights(currentParams.weights, 0.9, 0.8);
+                console.log("Reset")
+            };
+
+            requestAnimationFrame(renderScene);
+            console.time("renderScene");
+            currentParams = forwardBatch(currentParams, targets);
+            nextParams = forwardBatch(nextParams, targets);
+            renderer.current.updateParams(batchArraySync(currentParams));
+            renderer.current.updateParams(batchArraySync(nextParams), B);
+            
+            controls.update();
+            renderer.current.render();
+            console.timeEnd("renderScene");
         }
 
-        animate();
+
+        renderScene();
+    });
+
+    const end = () => {
+        if (isStarted) {
+            killRequest.current = true;
+            setIsStarted(false);
+        }
     }
 
     return (
-        <div className="w-screen h-screen absolute bg-white z-[1]">
-            <div className='z-0 absolute' ref={mountRef}></div>
-        </div>
+        <ThemeProvider
+            attribute="class"
+            defaultTheme="dark"
+            enableSystem
+            disableTransitionOnChange
+        >
+            
+        {
+            isTfReady ?
+                <>
+                    <Menubar className='absolute m-2'>
+                        <MenubarMenu>
+                            <MenubarTrigger>Menu</MenubarTrigger>
+                            <MenubarContent>
+                                <MenubarItem onClick={!isStarted ? () => start() : () => end()}>
+                                    {!isStarted ? "Start Training" : "End Training"} <MenubarShortcut>Ctrl+S</MenubarShortcut>
+                                </MenubarItem>
+                                <MenubarItem>Reset Training<MenubarShortcut>Ctrl+R</MenubarShortcut></MenubarItem>
+                                <MenubarSeparator />
+                                <MenubarItem>Load Checkpoint</MenubarItem>
+                                <MenubarSeparator />
+                                <MenubarItem>Settings</MenubarItem>
+                            </MenubarContent>
+                        </MenubarMenu>
+                    </Menubar>
+                    <div ref={containerRef} />
+                </>
+                :
+                <Loading />
+        }
+        </ThemeProvider>
     );
-}
+};
+export default TensorFlowModel;
