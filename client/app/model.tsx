@@ -4,13 +4,13 @@ import React, { useEffect, useState, useRef } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import * as tf from '@tensorflow/tfjs';
-
-import { TTL, B, T, C, INPUT_LAYER_SIZE } from './lib/constants';
-import { batchArraySync, BatchParamsTensor, forwardBatch, compareWeights, generateWeights } from './lib/model';
+import { batchArraySync, DEModel, DEModelInput, calculateNearbyBounds } from './lib/model';
 import '@tensorflow/tfjs-backend-webgl';
 import Renderer from './lib/renderer';
 import { Skeleton } from "../components/ui/skeleton"
 import { ThemeProvider } from "../components/theme-provider"
+import { SettingsPane, settings, Settings } from './settings';
+
 
 import {
     Menubar,
@@ -32,13 +32,15 @@ const Loading = () => {
     )
 }
 
+
+
 const TensorFlowModel: React.FC = () => {
     const containerRef = useRef<HTMLDivElement>(null);
     const [isTfReady, setIsTfReady] = useState(false);
     const [isStarted, setIsStarted] = useState(false);
     const killRequest = useRef<boolean>(false);
     const renderer = useRef<Renderer | null>(null);
-
+    const pendingSettings = useRef<Settings>(settings);
 
     useEffect(() => {
         console.log("page loaded")
@@ -81,82 +83,125 @@ const TensorFlowModel: React.FC = () => {
         renderer.current.scene.add(mainLight);
     }
 
-    const start = () => tf.tidy(() => {
-        if (!(typeof window !== 'undefined' && isTfReady && !isStarted)) {
-            return
-        }
+    const start = (activeSettings: Settings) => {
+        
+        if (!(typeof window !== 'undefined' && isTfReady && !isStarted)) return;
 
         setIsStarted(true);
+        // Create the scene if none exists
         if (renderer.current === null) {
             setup();
         }
 
-        // Model unit test for minimizeBatch()
-        let currentParams: BatchParamsTensor = {
-            fitness: tf.ones([B]).mul(TTL) as tf.Tensor1D,
-            position: tf.zeros([B, C]),
-            targetIndices: tf.zeros([B], 'int32'),
-            direction: tf.eye(C).expandDims(0).tile([B, 1, 1]),
-            history: tf.zeros([B, T, C - 1]).concat(tf.range(0, T).reshape([1, T]).tile([B, 1]).expandDims(-1).neg(), -1) as tf.Tensor3D,
-            weights: [tf.keep(tf.randomUniform([B, T, INPUT_LAYER_SIZE])), tf.keep(tf.randomUniform([B, Math.floor((C - 1) * C / 2), T]))],
-            alive: tf.ones([B], 'int32')
-        }
-        let nextParams: BatchParamsTensor = {
-            fitness: tf.ones([B]).mul(TTL) as tf.Tensor1D,
-            position: tf.zeros([B, C]),
-            targetIndices: tf.zeros([B], 'int32'),
-            direction: tf.eye(C).expandDims(0).tile([B, 1, 1]),
-            history: tf.zeros([B, T, C - 1]).concat(tf.range(0, T).reshape([1, T]).tile([B, 1]).expandDims(-1).neg(), -1) as tf.Tensor3D,
-            weights: [tf.keep(tf.randomUniform([B, T, INPUT_LAYER_SIZE])), tf.keep(tf.randomUniform([B, Math.floor((C - 1) * C / 2), T]))],
-            alive: tf.ones([B], 'int32')
-        };
+        const B = activeSettings["Batch Size"];
+        const T = activeSettings["Number of Food"];
+        const C = activeSettings["Number of Dimensions"];
+        const CR = activeSettings["Crossover Probabilty"];
+        const F = activeSettings["Differential Weight"];
+        const TTL = activeSettings["Time To Live"];
+        const G = activeSettings["Bound Box Length"];
 
-        const targets: tf.Tensor2D = tf.keep(tf.randomUniform([T, C], -10, 10));
+        // Initialize models
+        const currentModel = new DEModel({ batchInputShape: [B, T, C] });
+        const nextModel = new DEModel({ batchInputShape: [B, T, C] });
+        currentModel.build();
+        nextModel.build();
+        nextModel.buildFrom(currentModel, CR, F);
 
-        const currentParamsArray = batchArraySync(currentParams);
-        const nextParamsArray = batchArraySync(nextParams);
+        // Initialize the game states for both models
+        let currentModelState: DEModelInput = currentModel.resetInput
+        let nextModelState: DEModelInput = nextModel.resetInput;
+
+        // Add all the model meshes to the scene
+        const currentModelStateArray = batchArraySync(currentModelState);
+        const nextModelStateArray = batchArraySync(nextModelState);
         if (renderer.current === null) return
-        renderer.current.addBatchParams(currentParamsArray);
-        renderer.current.addBatchParams(nextParamsArray, B);
+        renderer.current.addBatchParams(currentModelStateArray);
+        renderer.current.addBatchParams(nextModelStateArray, B);
+
+        // Add all the target meshes to the scene
+        const targets = currentModel.wTarget!.read().arraySync() as number[][];
+        renderer.current.addGroup(targets);
 
         // Enable user camera controls
         const controls = new OrbitControls(renderer.current.camera, renderer.current.renderer.domElement);
         controls.update();
         controls.target.set(0, 0, 0);
+        
+        // Cube Geometry
+        const geometry = new THREE.BoxGeometry(G, G, G);
+        // Wireframe Material
+        const wireframeMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, wireframe: true });
+        // Create Cube Mesh
+        const boundBox = new THREE.Mesh(geometry, wireframeMaterial);
+        renderer.current.scene.add(boundBox);
 
+        tf.tidy(() => {
+            const [x, y, proj] = calculateNearbyBounds(currentModelState[0], currentModelState[1], G);
+            const projectionPositions = (proj.arraySync() as number[][][])[0];
+            renderer.current!.addGroup(projectionPositions);
+            renderer.current!.updateGroupMaterial(1, projectionPositions.map(() => Renderer.debugMaterial));
+            console.log(projectionPositions)
+        })
 
+        renderer.current.render();
+        
 
         const renderScene = () => {
-            
             if (renderer.current === null) return
-            if (killRequest.current) return;
-
-            if (currentParams.alive.sum().arraySync() === 0 && nextParams.alive.sum().arraySync() === 0) {
-                currentParams = compareWeights(currentParams.fitness, currentParams.weights, nextParams.fitness, nextParams.weights);
-                nextParams = generateWeights(currentParams.weights, 0.9, 0.8);
-                console.log("Reset")
+            if (killRequest.current) {
+                killRequest.current = false;
+                tf.dispose(currentModelState);
+                tf.dispose(nextModelState);
+                renderer.current.resetScene();
+                const ambientLight = new THREE.AmbientLight(0x404040); // soft white light
+                const mainLight = new THREE.DirectionalLight('white', 1);
+                renderer.current.scene.add(ambientLight);
+                renderer.current.scene.add(mainLight);
+                
+                
+                setIsStarted(false);
+                return;
             };
 
+            if (currentModelState[5].sum().arraySync() === 0 && nextModelState[5].sum().arraySync() === 0) {
+                currentModel.buildFromCompare(currentModelState, nextModelState, nextModel);
+                nextModel.buildFrom(currentModel, CR, F);
+                currentModelState = currentModel.resetInput;
+                nextModelState = nextModel.resetInput;
+                //console.log("Reset")
+            };
+            //await tf.nextFrame()
             requestAnimationFrame(renderScene);
-            console.time("renderScene");
-            currentParams = forwardBatch(currentParams, targets);
-            nextParams = forwardBatch(nextParams, targets);
-            renderer.current.updateParams(batchArraySync(currentParams));
-            renderer.current.updateParams(batchArraySync(nextParams), B);
             
+            //console.time("renderScene");
+            //console.log(currentModelState);
+            tf.tidy(() => {
+                const [x, y, proj] = calculateNearbyBounds(currentModelState[0], currentModelState[1], G);
+                const projectionPositions = (proj.arraySync() as number[][][])[0];
+                renderer.current!.updateGroupPosition(1, projectionPositions, 0.8);
+                console.log(projectionPositions)
+            })
+            
+            
+            currentModelState = currentModel.call(currentModelState);
+            //console.log(currentModelState[0].arraySync());
+            
+            nextModelState = nextModel.call(nextModelState);
+            renderer.current.updateParams(batchArraySync(currentModelState));
+            renderer.current.updateParams(batchArraySync(nextModelState), B);
             controls.update();
             renderer.current.render();
-            console.timeEnd("renderScene");
+            //console.timeEnd("renderScene");
+            
         }
 
-
         renderScene();
-    });
+    }
 
     const end = () => {
         if (isStarted) {
             killRequest.current = true;
-            setIsStarted(false);
         }
     }
 
@@ -167,7 +212,7 @@ const TensorFlowModel: React.FC = () => {
             enableSystem
             disableTransitionOnChange
         >
-            
+        <SettingsPane />
         {
             isTfReady ?
                 <>
@@ -175,14 +220,14 @@ const TensorFlowModel: React.FC = () => {
                         <MenubarMenu>
                             <MenubarTrigger>Menu</MenubarTrigger>
                             <MenubarContent>
-                                <MenubarItem onClick={!isStarted ? () => start() : () => end()}>
+                                <MenubarItem onClick={!isStarted ? () => start(settings) : () => end()}>
                                     {!isStarted ? "Start Training" : "End Training"} <MenubarShortcut>Ctrl+S</MenubarShortcut>
                                 </MenubarItem>
                                 <MenubarItem>Reset Training<MenubarShortcut>Ctrl+R</MenubarShortcut></MenubarItem>
                                 <MenubarSeparator />
                                 <MenubarItem>Load Checkpoint</MenubarItem>
                                 <MenubarSeparator />
-                                <MenubarItem>Settings</MenubarItem>
+                                <MenubarItem onClick={() => console.log(settings)}>Settings</MenubarItem>
                             </MenubarContent>
                         </MenubarMenu>
                     </Menubar>
