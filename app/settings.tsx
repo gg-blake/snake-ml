@@ -2,6 +2,7 @@ import { FolderApi, Pane, TabPageApi } from "tweakpane";
 import { useEffect, useRef } from "react";
 import Renderer from "./lib/renderer";
 import * as THREE from 'three';
+import { fitnessGraphParams } from "./lib/model";
 
 export interface Settings {
     "Time To Live": number;
@@ -19,6 +20,7 @@ export interface Settings {
     "Secondary Next Snake Color": string;
     "Primary Food Color": string;
     "Secondary Food Color": string;
+    "Fitness Graph Params": fitnessGraphParams;
 }
 
 export var settings: Settings = {
@@ -37,6 +39,13 @@ export var settings: Settings = {
     "Secondary Next Snake Color": `#${Renderer.secondaryGameObjectMaterialNext.color.getHexString()}`,
     "Primary Food Color": `#${Renderer.primaryFoodMaterial.color.getHexString()}`,
     "Secondary Food Color": `#${Renderer.secondaryFoodMaterial.color.getHexString()}`,
+    "Fitness Graph Params": {
+        a: 10,
+        b: 1.5,
+        c: 4,
+        min: -1,
+        max: 1
+    }
 }
 
 function addColorBinding(pane: Pane | TabPageApi | FolderApi, key: keyof Settings, material: THREE.MeshStandardMaterial) {
@@ -45,7 +54,7 @@ function addColorBinding(pane: Pane | TabPageApi | FolderApi, key: keyof Setting
         expanded: true,
     })
     b.on('change', (ev) => {
-        material.color.lerp(new THREE.Color(ev.value), 0.5)
+        material.color.lerp(new THREE.Color(ev.value as number | string), 0.5)
     })
 }
 
@@ -88,6 +97,16 @@ export function SettingsPane() {
         tab.pages[0].addBinding(settings, 'Starting Snake Length', { step: 1, min: 1, max: 100 });
         tab.pages[0].addBinding(settings, 'Bound Box Length', { step: 5, min: 5, max: 1000 });
         tab.pages[0].addBinding(settings, 'Number of Hidden Layer Nodes', { step: 1, min: 1, max: 300 });
+
+        const fitnessGraphParamsFolder = tab.pages[0].addFolder({
+            'title': 'Fitness Graph'
+        })
+
+        fitnessGraphParamsFolder.addBinding(settings["Fitness Graph Params"], 'a', { step: 0.0001, min: -50, max: 50 });
+        fitnessGraphParamsFolder.addBinding(settings["Fitness Graph Params"], 'b', { step: 0.0001, min: -50, max: 50 });
+        fitnessGraphParamsFolder.addBinding(settings["Fitness Graph Params"], 'c', { step: 0.0001, min: -50, max: 50 });
+        fitnessGraphParamsFolder.addBinding(settings["Fitness Graph Params"], 'min');
+        fitnessGraphParamsFolder.addBinding(settings["Fitness Graph Params"], 'max');
 
         const visualColorFolder = tab.pages[1].addFolder({
             'title': 'Colors'

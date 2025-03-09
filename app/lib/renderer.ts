@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { settings } from "../settings";
-import { DEModelInputArray } from './model';
+import { Data } from './model';
 import * as tf from '@tensorflow/tfjs';
 
 class Renderer {
@@ -71,7 +71,7 @@ class Renderer {
     }
 
     // Helper function adds a single population agent to the scene
-    addParam(params: DEModelInputArray, index: number, offset: number) {
+    addParam(params: Data<number>, index: number, offset: number) {
         // Initialize the storage for THREE.js mesh uuids 
         this.uuids[index] = []
 
@@ -81,7 +81,7 @@ class Renderer {
         this.uuids[index].push(firstUUID);
 
         // Add rest of the body (default material)
-        for (let historyIndex = 1; historyIndex < params.targetIndices[index - offset] + settings["Starting Snake Length"]; historyIndex++) {
+        for (let historyIndex = 1; historyIndex < params.target[index - offset] + settings["Starting Snake Length"]; historyIndex++) {
             const position: number[] = params.history[index - offset][historyIndex];
             const uuid = this.addMesh(this.scene, position, Renderer.primaryGeometry, index < settings["Batch Size"] ? Renderer.secondaryGameObjectMaterialCurrent : Renderer.secondaryGameObjectMaterialNext);
             this.uuids[index].push(uuid);
@@ -89,7 +89,7 @@ class Renderer {
     }
 
     // Add a population to the scene
-    addBatchParams(params: DEModelInputArray, offset: number = 0) {
+    addBatchParams(params: Data<number>, offset: number = 0) {
         for (let paramIndex = offset; paramIndex < settings["Batch Size"] + offset; paramIndex++) {
             this.addParam(params, paramIndex, offset);
         }
@@ -134,7 +134,7 @@ class Renderer {
     }
 
     // Helper function updates a single population agent in the scene
-    updateParam(params: DEModelInputArray, index: number, offset: number) {
+    updateParam(params: Data<number>, index: number, offset: number) {
         // Only update the meshes if gameObject is still alive
         /*if (!gameObject.alive) {
             return;
@@ -148,19 +148,19 @@ class Renderer {
         }
 
         // Add new meshes to the scene that have been added to the indexed agent's history
-        for (let historyIndex = this.uuids[index].length; historyIndex < params.targetIndices[index - offset] + settings["Starting Snake Length"]; historyIndex++) {
+        for (let historyIndex = this.uuids[index].length; historyIndex < params.target[index - offset] + settings["Starting Snake Length"]; historyIndex++) {
             const position = params.history[index - offset][historyIndex];
             const uuid = this.addMesh(this.scene, position, Renderer.primaryGeometry, index < settings["Batch Size"] ? Renderer.secondaryGameObjectMaterialCurrent : Renderer.secondaryGameObjectMaterialNext);
             this.uuids[index].push(uuid);
         }
 
         // Update the material type of the leading mesh in the indexed agent's history
-        const lastUUID = this.uuids[index][params.targetIndices[index - offset] + settings["Starting Snake Length"] - 1];
+        const lastUUID = this.uuids[index][params.target[index - offset] + settings["Starting Snake Length"] - 1];
         this.updateMeshMaterial(this.scene, lastUUID, index < settings["Batch Size"] ? Renderer.primaryGameObjectMaterialCurrent : Renderer.primaryGameObjectMaterialNext);
     }
 
     // Update a population in the scene
-    updateParams(params: DEModelInputArray, offset: number = 0) {
+    updateParams(params: Data<number>, offset: number = 0) {
         for (let paramIndex = offset; paramIndex < settings["Batch Size"] + offset; paramIndex++) {
             this.updateParam(params, paramIndex, offset);
         }
