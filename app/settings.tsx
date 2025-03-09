@@ -1,5 +1,7 @@
-import { Pane } from "tweakpane";
+import { FolderApi, Pane, TabPageApi } from "tweakpane";
 import { useEffect, useRef } from "react";
+import Renderer from "./lib/renderer";
+import * as THREE from 'three';
 
 export interface Settings {
     "Time To Live": number;
@@ -11,18 +13,48 @@ export interface Settings {
     "Starting Snake Length": number; // Starting score
     "Bound Box Length": number; // Bound box side length
     "Number of Hidden Layer Nodes": number; // Dimensionality of hidden layer(s)
+    "Primary Current Snake Color": string;
+    "Secondary Current Snake Color": string;
+    "Primary Next Snake Color": string;
+    "Secondary Next Snake Color": string;
+    "Primary Food Color": string;
+    "Secondary Food Color": string;
 }
 
 export var settings: Settings = {
-    "Time To Live": 100,
-    "Batch Size": 50,
+    "Time To Live": 300,
+    "Batch Size": 5,
     "Number of Food": 10,
     "Number of Dimensions": 3,
     "Crossover Probabilty": 0.9,
     "Differential Weight": 0.8,
     "Starting Snake Length": 5,
     "Bound Box Length": 30,
-    "Number of Hidden Layer Nodes": 40
+    "Number of Hidden Layer Nodes": 40,
+    "Primary Current Snake Color": `#${Renderer.primaryGameObjectMaterialCurrent.color.getHexString()}`,
+    "Secondary Current Snake Color": `#${Renderer.secondaryGameObjectMaterialCurrent.color.getHexString()}`,
+    "Primary Next Snake Color": `#${Renderer.primaryGameObjectMaterialNext.color.getHexString()}`,
+    "Secondary Next Snake Color": `#${Renderer.secondaryGameObjectMaterialNext.color.getHexString()}`,
+    "Primary Food Color": `#${Renderer.primaryFoodMaterial.color.getHexString()}`,
+    "Secondary Food Color": `#${Renderer.secondaryFoodMaterial.color.getHexString()}`,
+}
+
+function addColorBinding(pane: Pane | TabPageApi | FolderApi, key: keyof Settings, material: THREE.MeshStandardMaterial) {
+    const b = pane.addBinding(settings, key, {
+        picker: 'inline',
+        expanded: true,
+    })
+    b.on('change', (ev) => {
+        material.color.lerp(new THREE.Color(ev.value), 0.5)
+    })
+}
+
+function addTrainingParameterBinding(pane: Pane | TabPageApi | FolderApi, key: keyof Settings, step: number, min: number, max: number) {
+    pane.addBinding(settings, key, {
+        step: step,
+        min: min,
+        max: max
+    });
 }
 
 export function SettingsPane() {
@@ -41,51 +73,33 @@ export function SettingsPane() {
         if (!isMounted.current) return;
 
         const pane = new Pane({ container: paneRef.current });
-        pane.addBinding(settings, 'Time To Live', {
-            step: 10,
-            min: 50,
-            max: 300
+        const tab = pane.addTab({
+            pages: [
+                { title: 'Parameters' },
+                { title: 'Visual' },
+            ],
         });
-        pane.addBinding(settings, 'Batch Size', {
-            step: 1,
-            min: 4,
-            max: 1000
-        });
-        pane.addBinding(settings, 'Number of Food', {
-            step: 1,
-            min: 10,
-            max: 100
-        });
-        pane.addBinding(settings, 'Number of Dimensions', {
-            step: 1,
-            min: 2,
-            max: 15
-        });
-        pane.addBinding(settings, 'Crossover Probabilty', {
-            step: 0.01,
-            min: 0,
-            max: 1
-        });
-        pane.addBinding(settings, 'Differential Weight', {
-            step: 0.01,
-            min: 0,
-            max: 1
-        });
-        pane.addBinding(settings, 'Starting Snake Length', {
-            step: 1,
-            min: 1,
-            max: 100
-        });
-        pane.addBinding(settings, 'Bound Box Length', {
-            step: 5,
-            min: 5,
-            max: 1000
-        });
-        pane.addBinding(settings, 'Number of Hidden Layer Nodes', {
-            step: 1,
-            min: 1,
-            max: 300
-        });
+        tab.pages[0].addBinding(settings, 'Time To Live', { step: 10, min: 50, max: 300 });
+        tab.pages[0].addBinding(settings, 'Batch Size', { step: 1, min: 4, max: 1000 });
+        tab.pages[0].addBinding(settings, 'Number of Food', { step: 1, min: 10, max: 100 });
+        tab.pages[0].addBinding(settings, 'Number of Dimensions', { step: 1, min: 2, max: 15 });
+        tab.pages[0].addBinding(settings, 'Crossover Probabilty', { step: 0.01, min: 0, max: 1 });
+        tab.pages[0].addBinding(settings, 'Differential Weight', { step: 0.01, min: 0, max: 1 });
+        tab.pages[0].addBinding(settings, 'Starting Snake Length', { step: 1, min: 1, max: 100 });
+        tab.pages[0].addBinding(settings, 'Bound Box Length', { step: 5, min: 5, max: 1000 });
+        tab.pages[0].addBinding(settings, 'Number of Hidden Layer Nodes', { step: 1, min: 1, max: 300 });
+
+        const visualColorFolder = tab.pages[1].addFolder({
+            'title': 'Colors'
+        })
+        
+
+        addColorBinding(visualColorFolder, "Primary Current Snake Color", Renderer.primaryGameObjectMaterialCurrent);
+        addColorBinding(visualColorFolder, "Secondary Current Snake Color", Renderer.secondaryGameObjectMaterialCurrent);
+        addColorBinding(visualColorFolder, "Primary Next Snake Color", Renderer.primaryGameObjectMaterialNext);
+        addColorBinding(visualColorFolder, "Secondary Next Snake Color", Renderer.secondaryGameObjectMaterialNext);
+        addColorBinding(visualColorFolder, "Primary Food Color", Renderer.primaryFoodMaterial);
+        addColorBinding(visualColorFolder, "Secondary Food Color", Renderer.secondaryFoodMaterial);
 
         return () => {
             console.log('Ref unmounted');

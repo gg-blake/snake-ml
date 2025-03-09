@@ -29,6 +29,8 @@ class Renderer {
     
     // Generic material for debugging
     static debugMaterial = new THREE.MeshStandardMaterial({ color: 0x00ff44, roughness: 1 });
+    // Generic line material for debugging
+    static debugLineMaterial = new THREE.LineBasicMaterial({ color: 0x0000ff });
 
     constructor(scene: THREE.Scene, renderer: THREE.WebGLRenderer, camera: THREE.Camera) {
         this.scene = scene;
@@ -49,7 +51,23 @@ class Renderer {
         const mesh = new THREE.Mesh(geometry, material);
         mesh.position.set(position[0], position[1], position.length > 2 ? position[2] : 0);
         scene.add(mesh);
-        return mesh.uuid
+        return mesh.uuid;
+    }
+
+    addLine(scene: THREE.Scene, p0: number[], p1: number[], material: THREE.LineBasicMaterial): string {
+        // Check if the parameters are valid
+        if (p0.length < 2 || p1.length < 2) {
+            throw new RangeError("Position must be length greater than 2");
+        }
+
+        // Add the line to the scene
+        const points: THREE.Vector3[] = [];
+        points.push(new THREE.Vector3(p0[0], p0[1], p0.length > 2 ? p0[2] : 0));
+        points.push(new THREE.Vector3(p1[0], p1[1], p1.length > 2 ? p1[2] : 0));
+        const geometry = new THREE.BufferGeometry().setFromPoints(points);
+        const line = new THREE.Line(geometry, material);
+        scene.add(line);
+        return line.uuid;
     }
 
     // Helper function adds a single population agent to the scene
@@ -107,6 +125,14 @@ class Renderer {
         mesh.material = newMaterial;
     }
 
+    updateLinePosition(scene: THREE.Scene, uuid: string, p0: number[], p1: number[]) {
+        const line = scene.getObjectByProperty('uuid', uuid) as THREE.Line;
+        const points: THREE.Vector3[] = [];
+        points.push(new THREE.Vector3(p0[0], p0[1], p0.length > 2 ? p0[2] : 0));
+        points.push(new THREE.Vector3(p1[0], p1[1], p1.length > 2 ? p1[2] : 0));
+        line.geometry.setFromPoints(points);
+    }
+
     // Helper function updates a single population agent in the scene
     updateParam(params: DEModelInputArray, index: number, offset: number) {
         // Only update the meshes if gameObject is still alive
@@ -140,11 +166,25 @@ class Renderer {
         }
     }
 
-    addGroup(positions: number[][]) {
+    addGroup(positions: number[][], material: THREE.MeshStandardMaterial) {
         this.group.push([]);
         for (let groupIndex = 0; groupIndex < positions.length; groupIndex++) {
             const currentPosition = positions[groupIndex];
-            const uuid = this.addMesh(this.scene, currentPosition, Renderer.primaryGeometry, Renderer.debugMaterial);
+            const uuid = this.addMesh(this.scene, currentPosition, Renderer.primaryGeometry, material);
+            this.group[this.group.length - 1].push(uuid);
+        }
+    }
+
+    addLineGroup(p0: number[][], p1: number[][]) {
+        if (p0.length != p1.length) {
+            throw new Error("List of start points and end points must be 1 to 1");
+        }
+
+        this.group.push([]);
+        for (let groupIndex = 0; groupIndex < p0.length; groupIndex++) {
+            const currentP0 = p0[groupIndex];
+            const currentP1 = p1[groupIndex];
+            const uuid = this.addLine(this.scene, currentP0, currentP1, Renderer.debugLineMaterial);
             this.group[this.group.length - 1].push(uuid);
         }
     }
@@ -174,6 +214,24 @@ class Renderer {
             const currentMaterial = materials[groupIndex];
             this.updateMeshMaterial(this.scene, currentUUID, currentMaterial);
 
+        }
+    }
+
+    updateLineGroupPosition(index: number, p0: number[][], p1: number[][]) {
+        if (this.group[index].length != p0.length || this.group[index].length != p1.length) {
+            throw new Error("Number of positions does not match the number of meshes in the indexed group");
+        }
+
+        if (p0.length != p1.length) {
+            throw new Error("List of start points and end points must be 1 to 1");
+        }
+
+        for (let groupIndex = 0; groupIndex < p0.length; groupIndex++) {
+            // Update the position
+            const currentUUID = this.group[index][groupIndex];
+            const currentP0 = p0[groupIndex];
+            const currentP1 = p1[groupIndex];
+            this.updateLinePosition(this.scene, currentUUID, currentP0, currentP1);
         }
     }
 

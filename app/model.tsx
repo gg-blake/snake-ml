@@ -4,7 +4,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import * as tf from '@tensorflow/tfjs';
-import { batchArraySync, DEModel, DEModelInput, calculateNearbyBounds } from './lib/model';
+import { batchArraySync, DEModel, DEModelInput, calculateNearbyBounds, projectDirectionToBounds } from './lib/model';
 import '@tensorflow/tfjs-backend-webgl';
 import Renderer from './lib/renderer';
 import { Skeleton } from "../components/ui/skeleton"
@@ -121,7 +121,7 @@ const TensorFlowModel: React.FC = () => {
 
         // Add all the target meshes to the scene
         const targets = currentModel.wTarget!.read().arraySync() as number[][];
-        renderer.current.addGroup(targets);
+        renderer.current.addGroup(targets, Renderer.primaryFoodMaterial);
 
         // Enable user camera controls
         const controls = new OrbitControls(renderer.current.camera, renderer.current.renderer.domElement);
@@ -129,7 +129,7 @@ const TensorFlowModel: React.FC = () => {
         controls.target.set(0, 0, 0);
         
         // Cube Geometry
-        const geometry = new THREE.BoxGeometry(G, G, G);
+        const geometry = new THREE.BoxGeometry(G*2, G*2, G*2);
         // Wireframe Material
         const wireframeMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, wireframe: true });
         // Create Cube Mesh
@@ -137,11 +137,17 @@ const TensorFlowModel: React.FC = () => {
         renderer.current.scene.add(boundBox);
 
         tf.tidy(() => {
-            const [x, y, proj] = calculateNearbyBounds(currentModelState[0], currentModelState[1], G);
-            const projectionPositions = (proj.arraySync() as number[][][])[0];
-            renderer.current!.addGroup(projectionPositions);
+            const proj = projectDirectionToBounds(currentModelState[0], currentModelState[1], G);
+            const projectionPositions = (proj.arraySync() as number[][]);
+            renderer.current!.addGroup(projectionPositions, Renderer.debugMaterial);
             renderer.current!.updateGroupMaterial(1, projectionPositions.map(() => Renderer.debugMaterial));
             console.log(projectionPositions)
+        })
+
+        tf.tidy(() => {
+            const positionTile = currentModelState[0].expandDims(1).tile([1, C, 1]).reshape([B * C, C]);
+            const directionTile = positionTile.add(currentModelState[1].reshape([B * C, C]));
+            renderer.current!.addLineGroup(positionTile.arraySync() as number[][], directionTile.arraySync() as number[][]);
         })
 
         renderer.current.render();
@@ -174,20 +180,35 @@ const TensorFlowModel: React.FC = () => {
             //await tf.nextFrame()
             requestAnimationFrame(renderScene);
             
+            
             //console.time("renderScene");
             //console.log(currentModelState);
-            tf.tidy(() => {
-                const [x, y, proj] = calculateNearbyBounds(currentModelState[0], currentModelState[1], G);
-                const projectionPositions = (proj.arraySync() as number[][][])[0];
-                renderer.current!.updateGroupPosition(1, projectionPositions, 0.8);
-                console.log(projectionPositions)
-            })
+            
             
             
             currentModelState = currentModel.call(currentModelState);
-            //console.log(currentModelState[0].arraySync());
-            
             nextModelState = nextModel.call(nextModelState);
+
+
+            tf.tidy(() => {
+                const proj = projectDirectionToBounds(currentModelState[0], currentModelState[1], G);
+                const projectionPositions = (proj.arraySync() as number[][]);
+                renderer.current!.updateGroupPosition(1, projectionPositions, 1);
+
+                //proj.print()
+            })
+
+            tf.tidy(() => {
+                const positionTile = currentModelState[0].expandDims(1).tile([1, C, 1]).reshape([B * C, C]);
+                const directionTile = positionTile.add(currentModelState[1].reshape([B * C, C]));
+                renderer.current!.updateLineGroupPosition(2, positionTile.arraySync() as number[][], directionTile.arraySync() as number[][]);
+            })
+
+            tf.tidy(() => {
+                const targetIndices = currentModelState[3].max(0).arraySync() as number;
+                renderer.current!.updateGroupMaterial(0, Array.from(Array(T).keys(), (i: number) => i == targetIndices ? Renderer.primaryFoodMaterial : Renderer.secondaryFoodMaterial))
+            })
+
             renderer.current.updateParams(batchArraySync(currentModelState));
             renderer.current.updateParams(batchArraySync(nextModelState), B);
             controls.update();
