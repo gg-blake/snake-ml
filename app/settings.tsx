@@ -25,7 +25,7 @@ export interface Settings {
 
 export var settings: Settings = {
     "Time To Live": 300,
-    "Batch Size": 5,
+    "Batch Size": 200,
     "Number of Food": 10,
     "Number of Dimensions": 3,
     "Crossover Probabilty": 0.9,
