@@ -77,20 +77,20 @@ class Renderer {
 
         // Add mesh for the head (special material)
         const firstPosition = params.history[index - offset][0];
-        const firstUUID = this.addMesh(this.scene, firstPosition, Renderer.primaryGeometry, index < settings["Batch Size"] ? Renderer.primaryGameObjectMaterialCurrent : Renderer.primaryGameObjectMaterialNext);
+        const firstUUID = this.addMesh(this.scene, firstPosition, Renderer.primaryGeometry, index < settings.model.B ? Renderer.primaryGameObjectMaterialCurrent : Renderer.primaryGameObjectMaterialNext);
         this.uuids[index].push(firstUUID);
 
         // Add rest of the body (default material)
-        for (let historyIndex = 1; historyIndex < params.target[index - offset] + settings["Starting Snake Length"]; historyIndex++) {
+        for (let historyIndex = 1; historyIndex < params.target[index - offset] + settings.model.startingLength; historyIndex++) {
             const position: number[] = params.history[index - offset][historyIndex];
-            const uuid = this.addMesh(this.scene, position, Renderer.primaryGeometry, index < settings["Batch Size"] ? Renderer.secondaryGameObjectMaterialCurrent : Renderer.secondaryGameObjectMaterialNext);
+            const uuid = this.addMesh(this.scene, position, Renderer.primaryGeometry, index < settings.model.B ? Renderer.secondaryGameObjectMaterialCurrent : Renderer.secondaryGameObjectMaterialNext);
             this.uuids[index].push(uuid);
         }
     }
 
     // Add a population to the scene
     addBatchParams(params: Data<number>, offset: number = 0) {
-        for (let paramIndex = offset; paramIndex < settings["Batch Size"] + offset; paramIndex++) {
+        for (let paramIndex = offset; paramIndex < settings.model.B + offset; paramIndex++) {
             this.addParam(params, paramIndex, offset);
         }
     }
@@ -148,20 +148,20 @@ class Renderer {
         }
 
         // Add new meshes to the scene that have been added to the indexed agent's history
-        for (let historyIndex = this.uuids[index].length; historyIndex < params.target[index - offset] + settings["Starting Snake Length"]; historyIndex++) {
+        for (let historyIndex = this.uuids[index].length; historyIndex < params.target[index - offset] + settings.model.startingLength; historyIndex++) {
             const position = params.history[index - offset][historyIndex];
-            const uuid = this.addMesh(this.scene, position, Renderer.primaryGeometry, index < settings["Batch Size"] ? Renderer.secondaryGameObjectMaterialCurrent : Renderer.secondaryGameObjectMaterialNext);
+            const uuid = this.addMesh(this.scene, position, Renderer.primaryGeometry, index < settings.model.B ? Renderer.secondaryGameObjectMaterialCurrent : Renderer.secondaryGameObjectMaterialNext);
             this.uuids[index].push(uuid);
         }
 
         // Update the material type of the leading mesh in the indexed agent's history
-        const lastUUID = this.uuids[index][params.target[index - offset] + settings["Starting Snake Length"] - 1];
-        this.updateMeshMaterial(this.scene, lastUUID, index < settings["Batch Size"] ? Renderer.primaryGameObjectMaterialCurrent : Renderer.primaryGameObjectMaterialNext);
+        const lastUUID = this.uuids[index][params.target[index - offset] + settings.model.startingLength - 1];
+        this.updateMeshMaterial(this.scene, lastUUID, index < settings.model.B ? Renderer.primaryGameObjectMaterialCurrent : Renderer.primaryGameObjectMaterialNext);
     }
 
     // Update a population in the scene
     updateParams(params: Data<number>, offset: number = 0) {
-        for (let paramIndex = offset; paramIndex < settings["Batch Size"] + offset; paramIndex++) {
+        for (let paramIndex = offset; paramIndex < settings.model.B + offset; paramIndex++) {
             this.updateParam(params, paramIndex, offset);
         }
     }

@@ -4,6 +4,7 @@ import '@tensorflow/tfjs-backend-webgl';
 import { getSubsetsOfSizeK } from './util';
 import { Settings, settings } from '../settings';
 import main from './browserless';
+import InputNorm from './layers/inputnorm';
 
 //const PLANE_INDICES = getPlaneIndices(C);
 
@@ -322,6 +323,9 @@ type DEModelInput = [tf.Tensor2D, tf.Tensor3D, tf.Tensor1D, tf.Tensor1D, tf.Tens
 interface CallableModel {
     call(): void
 }
+
+
+
 class DifferentialEvolutionTrainer extends tf.layers.Layer implements CallableModel {
     public inputShape: tf.Shape;
     public B: number;
@@ -502,7 +506,7 @@ class DifferentialEvolutionTrainer extends tf.layers.Layer implements CallableMo
             const nextFitness = this.state.fitness.add(fitnessDelta).add(touchingFood.mul(this.ttl*2)) as tf.Tensor1D;
             const isAliveMask = this.state.fitness.greater(baseFitness).cast('float32').mul(this.state.active).mul(outOfBounds) as tf.Tensor1D;
             const nextTargetIndices = this.state.target.add(touchingFood.cast('int32')) as tf.Tensor1D;
-            //nextFitness.print()
+            touchingFood.print()
             return [nextFitness, nextTargetIndices, isAliveMask, fitnessDelta ];
         });
         return [ out1, out2, out3, out4 ];
@@ -536,23 +540,19 @@ class DifferentialEvolutionTrainer extends tf.layers.Layer implements CallableMo
 
 type ModelState<T extends CallableModel> = [T, T];
 
-const trainer = <T extends CallableModel>(initializer: ModelState<T>, preCallback: (...args: ModelState<T>) => boolean, postCallback?: (animate: () => void, ...args: ModelState<T>) => void) => tf.tidy(() => {
-    const [
-        currentModel,
-        nextModel,
-    ]: ModelState<T> = initializer;
+const trainer = <T extends CallableModel>(models: ModelState<T>, preCallback: (...args: ModelState<T>) => boolean, postCallback?: (animate: () => void, ...args: ModelState<T>) => void) => tf.tidy(() => {
     function animate() {
         // Perform post-processing of data and check for kill request
-        if (!preCallback(currentModel, nextModel)) return;
+        if (!preCallback(...models)) return;
 
         // Update the model states
-        currentModel.call();
-        nextModel.call();
+        for (const model of models) {
+            model.call()
+        }
 
         // Add post-processing/handling of data (i.e. rendering)
         if (!postCallback) return;
-
-        postCallback(animate, currentModel, nextModel);
+        postCallback(animate, ...models);
     }
 
     animate();

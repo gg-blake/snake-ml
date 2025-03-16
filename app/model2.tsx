@@ -10,6 +10,7 @@ import Renderer from './lib/renderer';
 import { Skeleton } from "../components/ui/skeleton"
 import { ThemeProvider } from "../components/theme-provider"
 import { SettingsPane, settings, Settings } from './settings';
+import getModel from "./lib/layermodel";
 
 
 import {
@@ -88,30 +89,35 @@ const TensorFlowModel: React.FC = () => {
         controls.current.target.set(0, 0, 0);
     }
 
-    const initializer = (renderer: Renderer, controls: OrbitControls): ModelState<DifferentialEvolutionTrainer> => {
-        const B = settings["Batch Size"];
-        const T = settings["Number of Food"];
-        const C = settings["Number of Dimensions"];
-        const CR = settings["Crossover Probabilty"];
-        const F = settings["Differential Weight"];
-        const G = settings["Bound Box Length"];
+    const train = (renderer: Renderer, controls: OrbitControls) => {
+        const B = settings.model.B;
+        const T = settings.model.T;
+        const C = settings.model.C;
+        const CR = settings.trainer.CR;
+        const F = settings.trainer.F;
+        const G = settings.model.boundingBoxLength;
+        const TTL = settings.model.TTL;
 
         // Initialize Models
-        const currentModel = new DifferentialEvolutionTrainer({ batchInputShape: [B, T, C] });
-        const nextModel = new DifferentialEvolutionTrainer({ batchInputShape: [B, T, C] });
+        const model = getModel(settings.model);
         
-        currentModel.build();
-        nextModel.build();
-        nextModel.buildFrom(currentModel, CR, F);
+        const targetPositions = tf.randomUniformInt([B, C], -G, G, 'float32');
 
         // Initialize Renderer
-        const currentStateArray = arraySync(currentModel.state);
-        const nextStateArray = arraySync(nextModel.state);
-        renderer.addBatchParams(currentStateArray);
-        renderer.addBatchParams(nextStateArray, B);
+        const state: Data<tf.Variable> = {
+            position: tf.variable(tf.zeros([B, C], 'float32')),
+            direction: tf.variable(tf.eye(C, ...[,,], 'float32').expandDims(0).tile([B, 1, 1])),
+            fitness: tf.variable(tf.ones([B], 'float32').mul(TTL)),
+            target: tf.variable(tf.zeros([B], 'int32')),
+            history: tf.variable(tf.zeros([B, 1, C], 'float32')),
+            fitnessDelta: tf.variable(tf.zeros([B], 'float32')),
+            active: tf.variable(tf.ones([B], 'int32'))
+        }
+        const stateArray = arraySync(state);
+        renderer.addBatchParams(stateArray);
 
         // Add all the target meshes to the scene
-        const targets = currentModel.wTarget!.read().arraySync() as number[][];
+        const targets = targetPositions.gather(state.target).arraySync() as number[][];
         renderer.addGroup(targets, Renderer.primaryFoodMaterial);
 
         // Cube Geometry
@@ -123,7 +129,7 @@ const TensorFlowModel: React.FC = () => {
         renderer.scene.add(boundBox);
 
         tf.tidy(() => {
-            const proj = projectDirectionToBounds(currentModel.state.position, currentModel.state.direction, G);
+            const proj = projectDirectionToBounds(state.position, state.direction, G);
             const projectionPositions = (proj.arraySync() as number[][]);
             renderer.addGroup(projectionPositions, Renderer.debugMaterial);
             renderer.updateGroupMaterial(1, projectionPositions.map(() => Renderer.debugMaterial));
@@ -131,35 +137,79 @@ const TensorFlowModel: React.FC = () => {
         })
 
         tf.tidy(() => {
-            const positionTile = currentModel.state.position.expandDims(1).tile([1, C, 1]).reshape([B * C, C]);
-            const directionTile = positionTile.add(currentModel.state.direction.reshape([B * C, C]));
+            const positionTile = state.position.expandDims(1).tile([1, C, 1]).reshape([B * C, C]);
+            const directionTile = positionTile.add(state.direction.reshape([B * C, C]));
             renderer.addLineGroup(positionTile.arraySync() as number[][], directionTile.arraySync() as number[][]);
         })
 
         renderer.render();
 
-        return [
-            currentModel,
-            nextModel
-        ]
+        function animate() {
+            if (killRequest.current) {
+                killRequest.current = false;
+                renderer.resetScene();
+                const ambientLight = new THREE.AmbientLight(0x404040); // soft white light
+                const mainLight = new THREE.DirectionalLight('white', 1);
+                renderer.scene.add(ambientLight);
+                renderer.scene.add(mainLight);
+
+                setIsStarted(false);
+                return false
+            };
+
+            if (state.active.equal(0).all().arraySync() == 1) {
+                // Initialize population
+            }
+
+            const nextState: tf.Tensor[] = model.predict([
+                state.position, 
+                state.direction, 
+                state.fitness, 
+                targetPositions, 
+                state.target, 
+                state.history, 
+                state.active]) as tf.Tensor[]
+
+            state.position.assign(nextState[0] as tf.Tensor2D);
+            state.direction.assign(nextState[1] as tf.Tensor3D);
+            state.fitness.assign(nextState[2] as tf.Tensor1D);
+            state.target.assign(nextState[3] as tf.Tensor1D);
+            state.history.assign(nextState[4] as tf.Tensor3D);
+            state.fitnessDelta.assign(nextState[5] as tf.Tensor1D);
+            state.active.assign(nextState[6] as tf.Tensor1D);
+
+            tf.tidy(() => {
+                const proj = projectDirectionToBounds(state.position, state.direction, G);
+                const projectionPositions = (proj.arraySync() as number[][]);
+                renderer.updateGroupPosition(1, projectionPositions, 1);
+
+                //proj.print()
+            })
+
+            tf.tidy(() => {
+                const positionTile = state.position.expandDims(1).tile([1, C, 1]).reshape([B * C, C]);
+                const directionTile = positionTile.add(state.direction.reshape([B * C, C]));
+                renderer.updateLineGroupPosition(2, positionTile.arraySync() as number[][], directionTile.arraySync() as number[][]);
+            })
+
+            tf.tidy(() => {
+                const targetIndices = state.target.max(0).arraySync() as number;
+                renderer.updateGroupMaterial(0, Array.from(Array(T).keys(), (i: number) => i == targetIndices ? Renderer.primaryFoodMaterial : Renderer.secondaryFoodMaterial))
+            })
+
+            renderer.updateParams(arraySync(state));
+            controls.update();
+            renderer.render();
+            
+            requestAnimationFrame(animate);
+        }
     }
 
     const preAnimate = (...args: ModelState<DifferentialEvolutionTrainer>): boolean => {
-        if (!renderer.current) return false; 
-        if (killRequest.current) {
-            killRequest.current = false;
-            renderer.current.resetScene();
-            const ambientLight = new THREE.AmbientLight(0x404040); // soft white light
-            const mainLight = new THREE.DirectionalLight('white', 1);
-            renderer.current.scene.add(ambientLight);
-            renderer.current.scene.add(mainLight);
+        
 
-            setIsStarted(false);
-            return false
-        };
-
-        const CR = settings["Crossover Probabilty"];
-        const F = settings["Differential Weight"];
+        const CR = settings.trainer.CR;
+        const F = settings.trainer.F;
 
         if (args[0].state.active.sum().arraySync() === 0 && args[1].state.active.sum().arraySync() === 0) {
             args[0].buildFromCompare(args[1]);
@@ -171,40 +221,6 @@ const TensorFlowModel: React.FC = () => {
         return true;
     }
 
-    const postAnimate = (animate: () => void, ...args: ModelState<DifferentialEvolutionTrainer>) => {
-        requestAnimationFrame(animate);
-        if (!renderer.current || !controls.current) return;
-
-        const B = settings["Batch Size"];
-        const T = settings["Number of Food"];
-        const C = settings["Number of Dimensions"];
-        const G = settings["Bound Box Length"];
-
-        tf.tidy(() => {
-            const proj = projectDirectionToBounds(args[0].state.position, args[0].state.direction, G);
-            const projectionPositions = (proj.arraySync() as number[][]);
-            renderer.current!.updateGroupPosition(1, projectionPositions, 1);
-
-            //proj.print()
-        })
-
-        tf.tidy(() => {
-            const positionTile = args[0].state.position.expandDims(1).tile([1, C, 1]).reshape([B * C, C]);
-            const directionTile = positionTile.add(args[0].state.direction.reshape([B * C, C]));
-            renderer.current!.updateLineGroupPosition(2, positionTile.arraySync() as number[][], directionTile.arraySync() as number[][]);
-        })
-
-        tf.tidy(() => {
-            const targetIndices = args[0].state.target.max(0).arraySync() as number;
-            renderer.current!.updateGroupMaterial(0, Array.from(Array(T).keys(), (i: number) => i == targetIndices ? Renderer.primaryFoodMaterial : Renderer.secondaryFoodMaterial))
-        })
-
-        renderer.current.updateParams(arraySync(args[0].state));
-        renderer.current.updateParams(arraySync(args[1].state), B);
-        controls.current.update();
-        renderer.current.render();
-    }
-
 
 
     const startTraining = () => {
@@ -214,11 +230,7 @@ const TensorFlowModel: React.FC = () => {
         if (!renderer.current || !controls.current) return;
         setIsStarted(true);
 
-        trainer(
-            initializer(renderer.current, controls.current),
-            preAnimate,
-            postAnimate
-        );
+        train(renderer.current, controls.current);
     }
 
     const endTraining = () => {
@@ -242,7 +254,7 @@ const TensorFlowModel: React.FC = () => {
                         <MenubarMenu>
                             <MenubarTrigger>Menu</MenubarTrigger>
                             <MenubarContent>
-                                <MenubarItem onClick={!isStarted ? () => train() : () => end()}>
+                                <MenubarItem onClick={!isStarted ? () => startTraining() : () => endTraining()}>
                                     {!isStarted ? "Start Training" : "End Training"} <MenubarShortcut>Ctrl+S</MenubarShortcut>
                                 </MenubarItem>
                                 <MenubarItem>Reset Training<MenubarShortcut>Ctrl+R</MenubarShortcut></MenubarItem>
