@@ -1,10 +1,9 @@
 import * as THREE from 'three';
 import { settings } from "../settings";
-import { Data } from './model';
 import * as tf from '@tensorflow/tfjs';
-import { NEAT } from './optimizer';
+import NEAT from './optimizer';
 import { calculateNearbyBounds } from './layers/inputnorm';
-import { arraySync } from './model';
+import { arraySync, Data } from './model';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 
 const projectDirectionToBounds = (position: tf.Tensor2D, direction: tf.Tensor3D, scale: number): tf.Tensor2D => tf.tidy(() => {

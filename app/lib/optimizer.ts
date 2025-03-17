@@ -3,7 +3,7 @@ import { NamedTensor } from '@tensorflow/tfjs-core/dist/tensor_types';
 import GameLayer, { GameLayerConfig } from './layers/gamelayer';
 import { settings } from '../settings';
 import { Data, DataValues } from './model';
-import getModel from './layermodel';
+import getModel from './model';
 import { NEATRenderer, Renderer } from './renderer';
 
 interface NEATVariableGradients extends tf.NamedTensorMap {

@@ -4,13 +4,13 @@ import React, { useEffect, useState, useRef } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import * as tf from '@tensorflow/tfjs';
-import { DifferentialEvolutionTrainer, Data, DataValues, arraySync, calculateNearbyBounds, projectDirectionToBounds, dispose, trainer, ModelState } from './lib/model';
+import { Data, DataValues, arraySync } from './lib/model';
 import '@tensorflow/tfjs-backend-webgl';
 import {NEATRenderer} from './lib/renderer';
 import { Skeleton } from "../components/ui/skeleton"
 import { ThemeProvider } from "../components/theme-provider"
 import { SettingsPane, settings, Settings, stats } from './settings';
-import getModel from "./lib/layermodel";
+import getModel from "./lib/model";
 import { toast } from "sonner";
 
 
