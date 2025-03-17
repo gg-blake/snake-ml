@@ -94,7 +94,7 @@ const inBounds = (A: tf.Tensor2D): tf.Tensor2D => tf.tidy(() => {
     return xor
 })
 
-const calculateNearbyBounds = (position: tf.Tensor2D, direction: tf.Tensor3D, scale: number) => tf.tidy(() => {
+export const calculateNearbyBounds = (position: tf.Tensor2D, direction: tf.Tensor3D, scale: number) => tf.tidy(() => {
     const raycasted = raycast(position, direction, scale);
     const mask = inBounds(raycasted).cast<tf.Tensor2D>('float32');
     const distance = closestDistance(raycasted.mul(mask));

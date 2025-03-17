@@ -28,12 +28,8 @@ export default function getModel(config: GameLayerConfig): tf.LayersModel {
 
     const model = tf.model({
         inputs: [position, direction, fitness, target, targetIndex, inputHistory, active],
-        outputs: [movement[0], movement[1], logic[0], logic[1], outputHistory, logic[2], logic[3]]
+        outputs: [movement[0], movement[1], logic[0], logic[1], outputHistory, logic[2]]
     });
 
     return model
-}
-  
-function arraySync(model: ) {
-    
 }

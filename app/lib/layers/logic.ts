@@ -29,7 +29,7 @@ export default class Logic extends GameLayer {
         super(config, gameConfig);
     }
 
-    call(inputs: LogicInputs): [tf.Tensor1D, tf.Tensor1D, tf.Tensor1D, tf.Tensor1D] {
+    call(inputs: LogicInputs): [tf.Tensor1D, tf.Tensor1D, tf.Tensor1D] {
         const P = this.fitnessGraphParams;
         return tf.tidy(() => {
             //const outOfBounds = sensoryData.slice([0, this.inputLayerSize - 1], [this.B, 1]).squeeze().notEqual(0).cast('int32');
@@ -46,13 +46,13 @@ export default class Logic extends GameLayer {
             const nextFitness = inputs[4].add(fitnessDelta).add(touchingFood.mul(this.TTL*2)) as tf.Tensor1D;
             const isAliveMask = inputs[4].greater(baseFitness).cast('int32').mul(inputs[5]).mul(outOfBounds) as tf.Tensor1D;
             const nextTargetIndices = inputs[3].add(touchingFood.cast('int32')) as tf.Tensor1D;
-            return [nextFitness, nextTargetIndices, isAliveMask, fitnessDelta ];
+            return [nextFitness, nextTargetIndices, isAliveMask];
         });
         
     }
 
     computeOutputShape(inputShape: tf.Shape | tf.Shape[]): tf.Shape | tf.Shape[] {
-        return [[this.B], [this.B], [this.B], [this.B]]
+        return [[this.B], [this.B], [this.B]]
     }
 
     static get className() {

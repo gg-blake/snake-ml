@@ -3,7 +3,6 @@ import { LayerArgs } from '@tensorflow/tfjs-layers/dist/engine/topology';
 import '@tensorflow/tfjs-backend-webgl';
 import { getSubsetsOfSizeK } from './util';
 import { Settings, settings } from '../settings';
-import main from './browserless';
 import InputNorm from './layers/inputnorm';
 
 //const PLANE_INDICES = getPlaneIndices(C);
@@ -42,8 +41,8 @@ const projectOntoPlaneBatch = (P0: tf.Tensor3D, L0: tf.Tensor3D, n: tf.Tensor3D)
 });
 
 const projectBatchUOntoV = (U: tf.Tensor3D, V: tf.Tensor3D): tf.Tensor4D => tf.tidy(() => {
-    const T = settings["Number of Food"];
-    const C = settings["Number of Dimensions"];
+    const T = settings.model.T;
+    const C = settings.model.C;
     const dot1 = tf.matMul(U, V, false, true);
     const dot2 = V.square().sum(-1).expandDims(-1).tile([1, 1, T]).transpose([0, 2, 1]) // (B, T, C)
     const div1 = tf.div(dot1, dot2).transpose([0, 2, 1]).expandDims(-1).tile([1, 1, 1, C]);
@@ -53,8 +52,8 @@ const projectBatchUOntoV = (U: tf.Tensor3D, V: tf.Tensor3D): tf.Tensor4D => tf.t
 });
 
 const distanceFromPlaneBatch = (planePoint: tf.Tensor3D, normalPoint: tf.Tensor3D, position: tf.Tensor2D, velocity: tf.Tensor3D): [tf.Tensor2D, tf.Tensor1D, tf.Tensor3D] => tf.tidy(() => {
-    const C = settings["Number of Dimensions"];
-    const B = settings["Batch Size"];
+    const C = settings.model.C;
+    const B = settings.model.B;
     // Offset the plane to ensure accurate distance
     const offsetPoint = tf.sub<tf.Tensor3D>(planePoint, position.expandDims(-2).tile([1, planePoint.shape[1], 1])); // (B, 2 * C, C)
     // Find the point that the line from the velocity vector intersects the plane
@@ -133,9 +132,9 @@ const projectDirectionToBounds = (position: tf.Tensor2D, direction: tf.Tensor3D,
 const calculateNearbyBody = (position: tf.Tensor2D, direction: tf.Tensor3D, history: tf.Tensor3D, sensitivity: number, range: number) => tf.tidy(() => {
     // position: (B, C)
     // history: (B, T, C) <- T = global max food
-    const T = settings["Number of Food"];
-    const C = settings["Number of Dimensions"];
-    const B = settings["Batch Size"];
+    const T = settings.model.T;
+    const C = settings.model.C;
+    const B = settings.model.B;
 
     // Center body position at center and offset all other history position relative to the change
     const positionBroadcasted = position.expandDims(1).tile([1, T, 1]) as tf.Tensor3D; // (B, T, C)
@@ -166,7 +165,7 @@ const calculateNearbyTarget = (position: tf.Tensor2D, direction: tf.Tensor3D, ta
     // position: (B, C)
     // direction: (B, C, C)
     // target: (B, C)
-    const C = settings["Number of Dimensions"];
+    const C = target.shape[1];
 
     // Translate vector space, positioning position at the origin
     const targetRelativePosition = target.add<tf.Tensor2D>(position.neg()); // (B, C)
@@ -219,7 +218,7 @@ const generateWeights = (weightsA: tf.LayerVariable[], weightsB: tf.LayerVariabl
 
 
 
-type TensorOrArray<T, R extends tf.Rank, G> = T extends tf.Variable ? tf.Variable<R> : T extends number ? G : never;
+type TensorOrArray<T, R extends tf.Rank, G> = T extends (tf.Variable | tf.Tensor) ? (T extends tf.Variable ? tf.Variable<R> : tf.Tensor<R>) : T extends number ? G : never;
 
 interface Data<T extends tf.Variable | tf.Tensor | number> {
     position: TensorOrArray<T, tf.Rank.R2, number[][]>;
@@ -227,18 +226,16 @@ interface Data<T extends tf.Variable | tf.Tensor | number> {
     history: TensorOrArray<T, tf.Rank.R3, number[][][]>;
     target: TensorOrArray<T, tf.Rank.R1, number[]>;
     fitness: TensorOrArray<T, tf.Rank.R1, number[]>;
-    fitnessDelta: TensorOrArray<T, tf.Rank.R1, number[]>;
     active: TensorOrArray<T, tf.Rank.R1, number[]>;
 }
 
-type DataValues<T extends tf.Variable | number> = [
+type DataValues<T extends tf.Tensor | number> = [
     Data<T>["position"],
     Data<T>["direction"],
     Data<T>["fitness"],
     Data<T>["target"],
     Data<T>["history"],
-    Data<T>["active"],
-    Data<T>["fitnessDelta"]
+    Data<T>["active"]
 ];
 
 type ValueOf<T> = T[keyof T];
@@ -276,26 +273,6 @@ const compareWeights = (fitnessesA: tf.Tensor1D, weightsA: tf.LayerVariable[], f
         weightsA[weightsNum].write(tf.keep(fittestWeightsPartial));
         fittestWeightsPartial.dispose();
         weightsStacked.dispose();
-    }
-});
-
-interface DEModelInputArray {
-    position: number[][];
-    direction: number[][][];
-    fitness: number[];
-    targetIndices: number[];
-    history: number[][][];
-    alive: number[];
-}
-
-const batchArraySync = (a: DEModelInput): DEModelInputArray => tf.tidy(() => {
-    return {
-        position: a[0].arraySync() as number[][],
-        direction: a[1].arraySync() as number[][][],
-        fitness: a[2].arraySync() as number[],
-        targetIndices: a[3].arraySync() as number[],
-        history: a[4].arraySync() as number[][][],
-        alive: a[5].arraySync() as number[]
     }
 });
 
@@ -341,7 +318,6 @@ class DifferentialEvolutionTrainer extends tf.layers.Layer implements CallableMo
     public ttl: number;
     public planeIndices: tf.Tensor2D;
     public gameSize: number;
-    public state: Data<tf.Variable>;
 
     constructor(config: LayerArgs) {
         super(config);
@@ -352,21 +328,11 @@ class DifferentialEvolutionTrainer extends tf.layers.Layer implements CallableMo
         this.B = this.inputShape[0]!;
         this.T = this.inputShape[1]!;
         this.C = this.inputShape[2]!;
-        this.H = settings["Number of Hidden Layer Nodes"];
-        this.ttl = settings["Time To Live"];
+        this.H = settings.model.units;
+        this.ttl = settings.model.TTL;
         this.planeIndices = this.#generatePlaneIndices;
-        this.gameSize = settings["Bound Box Length"];
+        this.gameSize = settings.model.boundingBoxLength;
         this.dtype = config.dtype || "float32";
-
-        this.state = {
-            position: tf.variable(tf.zeros([this.B, this.C]), ...[, ,], 'float32'),
-            direction: tf.variable(tf.eye(this.C).expandDims(0).tile([this.B, 1, 1]), ...[,,], 'float32'),
-            fitness: tf.variable(tf.ones([this.B], 'float32').mul(this.ttl) as tf.Tensor1D),
-            target: tf.variable(tf.zeros([this.B], 'int32')),
-            history: tf.variable(tf.zeros([this.B, this.T, this.C - 1], 'float32').concat(tf.range(0, this.T).reshape([1, this.T]).tile([this.B, 1]).expandDims(-1).neg(), -1) as tf.Tensor3D),
-            active: tf.variable(tf.ones([this.B], 'int32')),
-            fitnessDelta: tf.variable(tf.zeros([this.B], 'float32'))
-        }
     }
 
     get #generatePlaneIndices(): tf.Tensor2D {
@@ -399,56 +365,47 @@ class DifferentialEvolutionTrainer extends tf.layers.Layer implements CallableMo
         this.wTarget!.write(other.wTarget!.read());
     }
 
-    buildFromCompare(other: DifferentialEvolutionTrainer) {
-        return tf.tidy(() => compareWeights(this.state.fitness, this.trainableWeights, other.state.fitness, other.trainableWeights));
+    buildFromCompare(other: DifferentialEvolutionTrainer, fitnessA: tf.Tensor1D, fitnessB: tf.Tensor1D) {
+        return tf.tidy(() => compareWeights(fitnessA, this.trainableWeights, fitnessB, other.trainableWeights));
     }
 
     // @ts-ignore
-    call() {
+    call(inputs: DataValues<tf.Tensor>): DataValues<tf.Tensor> {
         if (!this.wInputHidden) throw new Error("Weights not initialized")
         if (!this.wHiddenOutput) throw new Error("Weights not initialized")
         if (!this.wTarget) throw new Error("Weights not initialized")
         
-        tf.tidy(() => {
-            const indexedFood = (this.wTarget!.read() as tf.Tensor2D).gather(this.state.target.cast('int32'));
-            const sequentialInput = this.#sensoryData(indexedFood);
+        return tf.tidy(() => {
+            const indexedFood = (this.wTarget!.read() as tf.Tensor2D).gather(inputs[3]);
+            const sequentialInput = this.#sensoryData(inputs[0], inputs[1], inputs[4], indexedFood);
             const [sequentialOutput1, sequentialOutput2] = this.#sequentialForward(sequentialInput.expandDims(-1) as tf.Tensor3D);
-            const [position, direction] = this.#movementForward(this.state.position, this.state.direction, sequentialOutput1, sequentialOutput2, this.state.active);
-            const [fitness, targetIndices, alive, fitnessDelta] = this.#logicForward(position, direction, indexedFood, sequentialInput);
-            const history = this.#historyForward(position, targetIndices);
+            const [position, direction] = this.#movementForward(inputs[0], inputs[1], sequentialOutput1, sequentialOutput2, inputs[5]);
+            const [fitness, targetIndices, alive] = this.#logicForward(position, direction, inputs[2], inputs[3], indexedFood, inputs[5], sequentialInput);
+            const history = this.#historyForward(position, targetIndices, inputs[4]);
 
-            assign(this.state, {
-                position: position.cast('float32'), 
-                direction: direction.cast('float32'), 
-                fitness: fitness.cast('float32'), 
-                target: targetIndices.cast('int32'), 
-                history: history.cast('float32'), 
-                active: alive.cast('int32'),
-                fitnessDelta: fitnessDelta.cast('float32')
-            } as Data<tf.Tensor>);
+            return [position, direction, fitness, targetIndices, history, alive ]
         })
     }
 
-    resetState(): void {
-        assign(this.state, {
-            position: tf.zeros([this.B, this.C]),
-            direction: tf.eye(this.C).expandDims(0).tile([this.B, 1, 1]),
-            fitness: tf.ones([this.B], 'float32').mul(this.ttl) as tf.Tensor1D,
-            target: tf.zeros([this.B], 'int32'),
-            history: tf.zeros([this.B, this.T, this.C - 1]).concat(tf.range(0, this.T).reshape([1, this.T]).tile([this.B, 1]).expandDims(-1).neg(), -1) as tf.Tensor3D,
-            active: tf.ones([this.B], 'int32'),
-            fitnessDelta: tf.zeros([this.B], 'float32')
-        } as Data<tf.Tensor>);
+    get resetState(): DataValues<tf.Tensor> {
+        return [
+            tf.zeros([this.B, this.C]),
+            tf.eye(this.C).expandDims(0).tile([this.B, 1, 1]),
+            tf.ones([this.B], 'float32').mul(this.ttl) as tf.Tensor1D,
+            tf.zeros([this.B], 'int32'),
+            tf.zeros([this.B, this.T, this.C - 1]).concat(tf.range(0, this.T).reshape([1, this.T]).tile([this.B, 1]).expandDims(-1).neg(), -1) as tf.Tensor3D,
+            tf.ones([this.B], 'int32')
+         ] as DataValues<tf.Tensor>
     }
 
-    #sensoryData(indexedFood: tf.Tensor2D): tf.Tensor2D {
+    #sensoryData(position: tf.Tensor2D, direction: tf.Tensor3D, history: tf.Tensor3D, indexedFood: tf.Tensor2D): tf.Tensor2D {
         const out = tf.tidy(() => {
             // Food data processing and vectorizing (n_dims)
-            const nearbyFood = calculateNearbyTarget(this.state.position, this.state.direction, indexedFood); // (B, C)
+            const nearbyFood = calculateNearbyTarget(position, direction, indexedFood); // (B, C)
             // Body data processing and vectorizing (5) (n_dims * 2 - 1)
-            const nearbyBody = calculateNearbyBody(this.state.position, this.state.direction, this.state.history, 0.95, 1000).slice([0, 0], [this.B, 1]); // (B, 1)
+            const nearbyBody = calculateNearbyBody(position, direction, history, 0.95, 1000).slice([0, 0], [this.B, 1]); // (B, 1)
             // Bounds data processing and vectorizing (3) (n_dims * 2 - 1)
-            const nearbyBounds = calculateNearbyBounds(this.state.position, this.state.direction, this.gameSize).expandDims(-1); // (B, 1)
+            const nearbyBounds = calculateNearbyBounds(position, direction, this.gameSize).expandDims(-1); // (B, 1)
             //nearbyBody.print()
             // Concatenate all sensory data to a single input vector
             return tf.concat([nearbyFood, nearbyBody, nearbyBounds], 1) as tf.Tensor2D; // (B, C * 5)
@@ -487,9 +444,9 @@ class DifferentialEvolutionTrainer extends tf.layers.Layer implements CallableMo
         return [out1, out2];
     }
 
-    #logicForward(nextPosition: tf.Tensor2D, nextDirection: tf.Tensor3D, indexedFood: tf.Tensor2D, sensoryData: tf.Tensor2D): [ tf.Tensor1D, tf.Tensor1D, tf.Tensor1D, tf.Tensor1D ] {
-        const [ out1, out2, out3, out4 ] = tf.tidy(() => {
-            const G = settings["Bound Box Length"];
+    #logicForward(nextPosition: tf.Tensor2D, nextDirection: tf.Tensor3D, fitness: tf.Tensor1D, indices: tf.Tensor1D, indexedFood: tf.Tensor2D, active: tf.Tensor1D, sensoryData: tf.Tensor2D): [ tf.Tensor1D, tf.Tensor1D, tf.Tensor1D ] {
+        const [ out1, out2, out3 ] = tf.tidy(() => {
+            const G = settings.model.boundingBoxLength;
             //const outOfBounds = sensoryData.slice([0, this.inputLayerSize - 1], [this.B, 1]).squeeze().notEqual(0).cast('int32');
             //sensoryData.slice([0, this.inputLayerSize - 1], [this.B, 1]).print()
             //sensoryData.print()
@@ -499,24 +456,24 @@ class DifferentialEvolutionTrainer extends tf.layers.Layer implements CallableMo
 
             
             
-            const baseFitness = this.state.target.mul(this.ttl);
-            const fitnessDelta = calculateFitness(targetDirection, settings["Fitness Graph Params"]).mul(this.state.active).mul(5) as tf.Tensor1D;
+            const baseFitness = indices.mul(this.ttl);
+            const fitnessDelta = calculateFitness(targetDirection, settings.model.fitnessGraphParams).mul(active).mul(5) as tf.Tensor1D;
             const nextDistance = tf.squaredDifference(nextPosition, indexedFood).sum(1).sqrt();
             const touchingFood = nextDistance.lessEqual(5).cast("float32");
-            const nextFitness = this.state.fitness.add(fitnessDelta).add(touchingFood.mul(this.ttl*2)) as tf.Tensor1D;
-            const isAliveMask = this.state.fitness.greater(baseFitness).cast('float32').mul(this.state.active).mul(outOfBounds) as tf.Tensor1D;
-            const nextTargetIndices = this.state.target.add(touchingFood.cast('int32')) as tf.Tensor1D;
-            touchingFood.print()
-            return [nextFitness, nextTargetIndices, isAliveMask, fitnessDelta ];
+            const nextFitness = fitness.add(fitnessDelta).add(touchingFood.mul(this.ttl*2)) as tf.Tensor1D;
+            const isAliveMask = fitness.greater(baseFitness).cast('float32').mul(active).mul(outOfBounds) as tf.Tensor1D;
+            const nextTargetIndices = indices.add(touchingFood.cast('int32')) as tf.Tensor1D;
+            
+            return [nextFitness, nextTargetIndices, isAliveMask ];
         });
-        return [ out1, out2, out3, out4 ];
+        return [ out1, out2, out3 ];
     }
 
-    #historyForward(nextPosition: tf.Tensor2D, nextTargetIndices: tf.Tensor1D): tf.Tensor3D {
-        const S = settings["Starting Snake Length"];
+    #historyForward(nextPosition: tf.Tensor2D, nextTargetIndices: tf.Tensor1D, history: tf.Tensor3D): tf.Tensor3D {
+        const S = settings.model.startingLength;
         const out = tf.tidy(() => {
             const cutoffMask = tf.range(0, this.T).expandDims().tile([this.B, 1]).less(nextTargetIndices.expandDims(-1).tile([1, this.T]).add(S)).cast('int32'); // (B, T)
-            const cutoffKeep = tf.concat([nextPosition.expandDims(1), this.state.history], 1).slice([0, 0, 0], [this.B, this.T, this.C]); // (B, T, C)
+            const cutoffKeep = tf.concat([nextPosition.expandDims(1), history], 1).slice([0, 0, 0], [this.B, this.T, this.C]); // (B, T, C)
             const nextHistory = cutoffKeep.div(cutoffMask.expandDims(1).tile([1, this.C, 1]).transpose([0, 2, 1])) as tf.Tensor3D; // (B, T, C)
             return nextHistory;
         })
@@ -558,5 +515,17 @@ const trainer = <T extends CallableModel>(models: ModelState<T>, preCallback: (.
     animate();
 })
 
-export { batchArraySync, compareWeights, generateWeights, DifferentialEvolutionTrainer, calculateNearbyBounds, projectDirectionToBounds, arraySync, dispose, trainer }
+function main() {
+    const model = new DifferentialEvolutionTrainer({ inputShape: [settings.model.B, settings.model.T, settings.model.C]});
+    model.build()
+    let state = model.resetState;
+    for (let i = 0; i < 50; i++) {
+        console.time("step");
+        state = model.call(state);
+        console.timeEnd("step");
+    }
+
+}
+
+export {compareWeights, generateWeights, DifferentialEvolutionTrainer, calculateNearbyBounds, projectDirectionToBounds, arraySync, dispose, trainer }
 export type { Data, DataValues, ModelState }
