@@ -4,12 +4,16 @@ import React, { useEffect, useState, useRef } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import * as tf from '@tensorflow/tfjs';
-import { batchArraySync, DifferentialEvolutionTrainer, Data, DataValues, arraySync, calculateNearbyBounds, projectDirectionToBounds, dispose } from './lib/model';
+import { Data, DataValues, arraySync } from './lib/model';
 import '@tensorflow/tfjs-backend-webgl';
-import Renderer from './lib/renderer';
+import {NEATRenderer} from './lib/renderer';
 import { Skeleton } from "../components/ui/skeleton"
 import { ThemeProvider } from "../components/theme-provider"
-import { SettingsPane, settings, Settings } from './settings';
+import { SettingsPane, settings, Settings, stats } from './settings';
+import getModel from "./lib/model";
+import { toast } from "sonner";
+
+
 
 
 import {
@@ -21,6 +25,7 @@ import {
     MenubarShortcut,
     MenubarTrigger,
 } from "../components/ui/menubar"
+import NEAT from './lib/optimizer';
 
 const Loading = () => {
     return (
@@ -39,8 +44,12 @@ const TensorFlowModel: React.FC = () => {
     const [isTfReady, setIsTfReady] = useState(false);
     const [isStarted, setIsStarted] = useState(false);
     const killRequest = useRef<boolean>(false);
-    const renderer = useRef<Renderer | null>(null);
-    const pendingSettings = useRef<Settings>(settings);
+    const endRequest = useRef<boolean>(false);
+    const renderer = useRef<NEATRenderer | null>(null);
+    const controls = useRef<OrbitControls | null>(null);
+    const trainerRef = useRef<NEAT | null>(null);
+    const modelRef = useRef<tf.LayersModel | null>(null);
+    const [checkpoint, setCheckpoint] = useState<tf.Tensor3D[] | null>(null);
 
     useEffect(() => {
         console.log("page loaded")
@@ -74,164 +83,131 @@ const TensorFlowModel: React.FC = () => {
         containerRef.current?.appendChild(r.domElement);
         camera.position.z = 5;
 
-        renderer.current = new Renderer(scene, r, camera);
+        renderer.current = new NEATRenderer(scene, r, camera);
 
         const ambientLight = new THREE.AmbientLight(0x404040); // soft white light
         const mainLight = new THREE.DirectionalLight('white', 1);
         mainLight.position.set(10, 10, 10);
         renderer.current.scene.add(ambientLight);
         renderer.current.scene.add(mainLight);
-    }
-
-    const start = (activeSettings: Settings) => {
-        
-        if (!(typeof window !== 'undefined' && isTfReady && !isStarted)) return;
-
-        setIsStarted(true);
-        // Create the scene if none exists
-        if (renderer.current === null) {
-            setup();
-        }
-
-        const B = activeSettings["Batch Size"];
-        const T = activeSettings["Number of Food"];
-        const C = activeSettings["Number of Dimensions"];
-        const CR = activeSettings["Crossover Probabilty"];
-        const F = activeSettings["Differential Weight"];
-        const TTL = activeSettings["Time To Live"];
-        const G = activeSettings["Bound Box Length"];
-
-        // Initialize models
-        const currentModel = new DifferentialEvolutionTrainer({ batchInputShape: [B, T, C] });
-        const nextModel = new DifferentialEvolutionTrainer({ batchInputShape: [B, T, C] });
-        currentModel.build();
-        nextModel.build();
-        nextModel.buildFrom(currentModel, CR, F);
-
-        // Initialize the game states for both models
-        let currentModelState: Data<tf.Tensor> = currentModel.resetInput;
-        let nextModelState: Data<tf.Tensor> = nextModel.resetInput;
-
-        // Add all the model meshes to the scene
-        const currentModelStateArray = arraySync(currentModelState);
-        const nextModelStateArray = arraySync(nextModelState);
-        if (renderer.current === null) return
-        renderer.current.addBatchParams(currentModelStateArray);
-        renderer.current.addBatchParams(nextModelStateArray, B);
-
-        // Add all the target meshes to the scene
-        const targets = currentModel.wTarget!.read().arraySync() as number[][];
-        renderer.current.addGroup(targets, Renderer.primaryFoodMaterial);
 
         // Enable user camera controls
-        const controls = new OrbitControls(renderer.current.camera, renderer.current.renderer.domElement);
-        controls.update();
-        controls.target.set(0, 0, 0);
+        trainerRef.current = new NEAT(settings.model, settings.trainer);
         
-        // Cube Geometry
-        const geometry = new THREE.BoxGeometry(G*2, G*2, G*2);
-        // Wireframe Material
-        const wireframeMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, wireframe: true });
-        // Create Cube Mesh
-        const boundBox = new THREE.Mesh(geometry, wireframeMaterial);
-        renderer.current.scene.add(boundBox);
+    }
 
-        tf.tidy(() => {
-            const proj = projectDirectionToBounds(currentModelState.position, currentModelState.direction, G);
-            const projectionPositions = (proj.arraySync() as number[][]);
-            renderer.current!.addGroup(projectionPositions, Renderer.debugMaterial);
-            renderer.current!.updateGroupMaterial(1, projectionPositions.map(() => Renderer.debugMaterial));
-            console.log(projectionPositions)
-        })
+    const train = (model: tf.LayersModel, trainer: NEAT, renderer: NEATRenderer) => {
+        const B = settings.model.B;
+        const T = settings.model.T;
+        const C = settings.model.C;
+        const CR = settings.trainer.CR;
+        const F = settings.trainer.F;
+        const G = settings.model.boundingBoxLength;
+        const TTL = settings.model.TTL;
 
-        tf.tidy(() => {
-            const positionTile = currentModelState.position.expandDims(1).tile([1, C, 1]).reshape([B * C, C]);
-            const directionTile = positionTile.add(currentModelState.direction.reshape([B * C, C]));
-            renderer.current!.addLineGroup(positionTile.arraySync() as number[][], directionTile.arraySync() as number[][]);
-        })
+        if (modelRef.current?.feedInputShapes[0][0] == 1) {
+            let batchWeights: tf.Tensor3D[] = [];
+            (model.getWeights(true) as tf.Tensor3D[]).map((weights: tf.Tensor3D) => {
+                batchWeights.push(weights.tile([settings.model.B, 1, 1]));
+            })
+            model = getModel(settings.model);
+            model.setWeights(batchWeights);
+            trainer.evolve(model);
+            toast("Checkpoint detected. Loading from existing weights.");
+        }
 
-        renderer.current.render();
-        
+        renderer.renderInit(trainer);
 
-        const renderScene = () => {
-            if (renderer.current === null) return
-            if (killRequest.current) {
-                killRequest.current = false;
-                dispose(currentModelState);
-                dispose(nextModelState);
-                renderer.current.resetScene();
+        function animate() {
+            if (endRequest.current) {
+                renderer.resetScene();
                 const ambientLight = new THREE.AmbientLight(0x404040); // soft white light
                 const mainLight = new THREE.DirectionalLight('white', 1);
-                renderer.current.scene.add(ambientLight);
-                renderer.current.scene.add(mainLight);
+                mainLight.position.set(10, 10, 10);
+                renderer.scene.add(ambientLight);
+                renderer.scene.add(mainLight);
                 
+
+                // Reset model and trainer
+                const index = trainer.state.fitness.argMax().arraySync() as number;
+                tf.tidy(() => {
+                    let bestWeights: tf.Tensor3D[] = []; // (1, X, Y)
+                    (model.getWeights(true) as tf.Tensor3D[]).map((weights: tf.Tensor3D) => {
+                        bestWeights.push(tf.keep(weights.slice([index, 0, 0], [1, weights.shape[1], weights.shape[2]])));
+                    });
+                    const compactModel = getModel({...settings.model, B: 1});
+                    compactModel.setWeights(bestWeights);
+                    model.save('localstorage://my-model-1')
+                    .then(() => toast("Checkpoint saved successully to local storage"));
+                })
                 
-                setIsStarted(false);
+                trainerRef.current?.resetState();
+                
+                endTraining();
+
                 return;
-            };
-
-            if (currentModelState.active.sum().arraySync() === 0 && nextModelState.active.sum().arraySync() === 0) {
-                currentModel.buildFromCompare(currentModelState, nextModelState, nextModel);
-                nextModel.buildFrom(currentModel, CR, F);
-                currentModelState = currentModel.resetInput;
-                nextModelState = nextModel.resetInput;
-                //console.log("Reset")
-            };
-            //await tf.nextFrame()
-            requestAnimationFrame(renderScene);
-            
-            
-            //console.time("renderScene");
-            //console.log(currentModelState);
-            
-            
-            try {
-                currentModelState = currentModel.call(currentModelState);
-                nextModelState = nextModel.call(nextModelState);
-                
-            } catch (e) {
-                killRequest.current = true;
-                throw e;
             }
+
+            if (killRequest.current) {
+                trainer.resetState();
+                killRequest.current = false;
+            };
+
+            const start = Date.now();
+            trainer.step(model, renderer);
+            const end = Date.now();
+
+            const maxFitness = trainer.state.fitness.max().arraySync() as number;
+            stats.maxFitness = maxFitness;
+            stats.fps = 1 / ((end - start) / 1000);
             
-            //currentModelState[2].lessEqual(0).all().print()
-
-
-            tf.tidy(() => {
-                const proj = projectDirectionToBounds(currentModelState.position, currentModelState.direction, G);
-                const projectionPositions = (proj.arraySync() as number[][]);
-                renderer.current!.updateGroupPosition(1, projectionPositions, 1);
-
-                //proj.print()
-            })
-
-            tf.tidy(() => {
-                const positionTile = currentModelState.position.expandDims(1).tile([1, C, 1]).reshape([B * C, C]);
-                const directionTile = positionTile.add(currentModelState.direction.reshape([B * C, C]));
-                renderer.current!.updateLineGroupPosition(2, positionTile.arraySync() as number[][], directionTile.arraySync() as number[][]);
-            })
-
-            tf.tidy(() => {
-                const targetIndices = currentModelState.target.max(0).arraySync() as number;
-                renderer.current!.updateGroupMaterial(0, Array.from(Array(T).keys(), (i: number) => i == targetIndices ? Renderer.primaryFoodMaterial : Renderer.secondaryFoodMaterial))
-            })
-
-            renderer.current.updateParams(arraySync(currentModelState));
-            renderer.current.updateParams(arraySync(nextModelState), B);
-            controls.update();
-            renderer.current.render();
-            //console.timeEnd("renderScene");
-            
+            requestAnimationFrame(animate);
         }
 
-        renderScene();
+        animate();
     }
 
-    const end = () => {
+    const startTraining = () => {
+        if (!renderer.current || !trainerRef.current || !modelRef.current) {
+            setup();
+        }
+        
+        modelRef.current = getModel(settings.model);
+        setIsStarted(true);
+    }
+
+    useEffect(() => {
+        if (!isStarted) return;
+        if (!renderer.current || !trainerRef.current || !modelRef.current) return;
+        endRequest.current = false;
+        tf.loadLayersModel('localstorage://my-model-1')
+        .then((model: tf.LayersModel) => {
+            modelRef.current = model;
+            console.log(modelRef.current)
+            toast("Model loaded from cache successfully");
+            train(modelRef.current, trainerRef.current!, renderer.current!);
+        })
+        .catch((reason: any) => {
+            toast("No model detected. Starting with new weights.")
+            train(modelRef.current!, trainerRef.current!, renderer.current!);
+        })
+    }, [isStarted])
+
+    const endTraining = () => {
+        if (!isStarted) return;
         if (isStarted) {
-            killRequest.current = true;
+            endRequest.current = true;
+            setIsStarted(false);
         }
     }
+
+    const killPopulation = () => {
+        killRequest.current = true;
+    }
+
+    useEffect(() => {
+        toast("Checkpoint saved successfully");
+    }, [checkpoint])
 
     return (
         <ThemeProvider
@@ -240,7 +216,7 @@ const TensorFlowModel: React.FC = () => {
             enableSystem
             disableTransitionOnChange
         >
-        <SettingsPane />
+        <SettingsPane killRequest={killRequest} endRequest={endRequest} />
         {
             isTfReady ?
                 <>
@@ -248,10 +224,10 @@ const TensorFlowModel: React.FC = () => {
                         <MenubarMenu>
                             <MenubarTrigger>Menu</MenubarTrigger>
                             <MenubarContent>
-                                <MenubarItem onClick={!isStarted ? () => start(settings) : () => end()}>
+                                <MenubarItem onClick={!isStarted ? () => startTraining() : () => endTraining()}>
                                     {!isStarted ? "Start Training" : "End Training"} <MenubarShortcut>Ctrl+S</MenubarShortcut>
                                 </MenubarItem>
-                                <MenubarItem>Reset Training<MenubarShortcut>Ctrl+R</MenubarShortcut></MenubarItem>
+                                <MenubarItem onClick={isStarted ? () => killPopulation() : () => {}}>Start Next Generation<MenubarShortcut>Ctrl+R</MenubarShortcut></MenubarItem>
                                 <MenubarSeparator />
                                 <MenubarItem>Load Checkpoint</MenubarItem>
                                 <MenubarSeparator />

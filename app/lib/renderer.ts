@@ -1,27 +1,35 @@
 import * as THREE from 'three';
 import { settings } from "../settings";
-import { Data } from './model';
 import * as tf from '@tensorflow/tfjs';
+import NEAT from './optimizer';
+import { calculateNearbyBounds } from './layers/inputnorm';
+import { arraySync, Data } from './model';
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 
-class Renderer {
+const projectDirectionToBounds = (position: tf.Tensor2D, direction: tf.Tensor3D, scale: number): tf.Tensor2D => tf.tidy(() => {
+    const B = position.shape[0];
+    const C = position.shape[1];
+    const distance = calculateNearbyBounds(position, direction, scale).expandDims(-1).tile([1, C]) as tf.Tensor2D;
+    
+    const forwardVectors = direction.slice([0, 0, 0], [B, 1, C]).squeeze([1]) as tf.Tensor2D;
+    const proj = tf.add(position, tf.mul(forwardVectors, distance)) as tf.Tensor2D;
+    
+    return proj
+})
+
+export class Renderer {
     scene: THREE.Scene;
     renderer: THREE.WebGLRenderer;
     camera: THREE.Camera;
     uuids: {[key: number]: string[]};
-    group: string[][];
+    group: {[key: string]: string[]};
     
     // Generic geometry
     static primaryGeometry = new THREE.BoxGeometry();
     // Snake head material (current population)
-    static primaryGameObjectMaterialCurrent = new THREE.MeshStandardMaterial({ color: 0x72e66c, roughness: 1 });
-    // Snake tail material (current population)
-    static secondaryGameObjectMaterialCurrent = new THREE.MeshStandardMaterial({ color: 0x8aace3, roughness: 1 });
-    // Snake head material (next population)
-    static primaryGameObjectMaterialNext = new THREE.MeshStandardMaterial({ color: 0xe6e275, roughness: 1 });
-    // Snake tail material (next population)
-    static secondaryGameObjectMaterialNext = new THREE.MeshStandardMaterial({ color: 0xf584ad, roughness: 1 });
+    static primaryMaterial = new THREE.MeshStandardMaterial({ color: 0x72e66c, roughness: 1 });
     // Snake dead material
-    static tertiaryGameObjectMaterial = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 1 });
+    static secondaryMaterial = new THREE.MeshStandardMaterial({ color: 0x000000, roughness: 1, opacity: 0 });
     // Food material (most recently generated food)
     static primaryFoodMaterial = new THREE.MeshStandardMaterial({ color: 0xb37e56, roughness: 1 });
     // Food material (older food)
@@ -30,14 +38,16 @@ class Renderer {
     // Generic material for debugging
     static debugMaterial = new THREE.MeshStandardMaterial({ color: 0x00ff44, roughness: 1 });
     // Generic line material for debugging
-    static debugLineMaterial = new THREE.LineBasicMaterial({ color: 0x0000ff });
+    static primaryDebugLineMaterial = new THREE.LineBasicMaterial({ color: 0x5e5e5e });
+    // Generic line material for debugging
+    static secondaryDebugLineMaterial = new THREE.LineBasicMaterial({ color: 0x000000, opacity: 0.5 });
 
     constructor(scene: THREE.Scene, renderer: THREE.WebGLRenderer, camera: THREE.Camera) {
         this.scene = scene;
         this.renderer = renderer;
         this.camera = camera;
         this.uuids = {};
-        this.group = [];
+        this.group = {};
     }
 
     // Add a position to the scene
@@ -73,24 +83,20 @@ class Renderer {
     // Helper function adds a single population agent to the scene
     addParam(params: Data<number>, index: number, offset: number) {
         // Initialize the storage for THREE.js mesh uuids 
-        this.uuids[index] = []
-
-        // Add mesh for the head (special material)
-        const firstPosition = params.history[index - offset][0];
-        const firstUUID = this.addMesh(this.scene, firstPosition, Renderer.primaryGeometry, index < settings["Batch Size"] ? Renderer.primaryGameObjectMaterialCurrent : Renderer.primaryGameObjectMaterialNext);
-        this.uuids[index].push(firstUUID);
+        this.uuids[index] = [];
+        const materialClone = Renderer.primaryMaterial.clone();
 
         // Add rest of the body (default material)
-        for (let historyIndex = 1; historyIndex < params.target[index - offset] + settings["Starting Snake Length"]; historyIndex++) {
+        for (let historyIndex = 0; historyIndex < params.target[index - offset] + settings.model.startingLength; historyIndex++) {
             const position: number[] = params.history[index - offset][historyIndex];
-            const uuid = this.addMesh(this.scene, position, Renderer.primaryGeometry, index < settings["Batch Size"] ? Renderer.secondaryGameObjectMaterialCurrent : Renderer.secondaryGameObjectMaterialNext);
+            const uuid = this.addMesh(this.scene, position, Renderer.primaryGeometry, materialClone);
             this.uuids[index].push(uuid);
         }
     }
 
     // Add a population to the scene
     addBatchParams(params: Data<number>, offset: number = 0) {
-        for (let paramIndex = offset; paramIndex < settings["Batch Size"] + offset; paramIndex++) {
+        for (let paramIndex = offset; paramIndex < settings.model.B + offset; paramIndex++) {
             this.addParam(params, paramIndex, offset);
         }
     }
@@ -113,8 +119,8 @@ class Renderer {
     }
 
     // Update an existing mesh's material in the scene
-    updateMeshMaterial(scene: THREE.Scene, uuid: string, newMaterial: THREE.MeshStandardMaterial) {
-        const mesh = scene.getObjectByProperty('uuid', uuid);
+    updateMeshMaterial(scene: THREE.Scene, uuid: string, color: THREE.Color, lerpAlpha: number = 1) {
+        const mesh = scene.getObjectByProperty('uuid', uuid) as THREE.Mesh;
         if (mesh == undefined) {
             throw new Error("The uuid specified could not be found");
         }
@@ -122,7 +128,7 @@ class Renderer {
             throw new TypeError("The object with the specified uuid is of the wrong type. Should be of type THREE.Mesh");
         }
         
-        mesh.material = newMaterial;
+        (mesh.material as THREE.MeshStandardMaterial).color.lerp(color, lerpAlpha);
     }
 
     updateLinePosition(scene: THREE.Scene, uuid: string, p0: number[], p1: number[]) {
@@ -136,66 +142,79 @@ class Renderer {
     // Helper function updates a single population agent in the scene
     updateParam(params: Data<number>, index: number, offset: number) {
         // Only update the meshes if gameObject is still alive
-        /*if (!gameObject.alive) {
-            return;
-        }*/
+
+        const baseMaterial = (this.scene.getObjectByProperty('uuid', this.uuids[index][0]) as THREE.Mesh).material as THREE.MeshStandardMaterial;
 
         // Update all the existing meshes' positions
         for (let uuidsIndex = 0; uuidsIndex < this.uuids[index].length - 1; uuidsIndex++) {
             const position = params.history[index - offset][uuidsIndex];
             const uuid = this.uuids[index][uuidsIndex];
             this.updateMeshPosition(this.scene, uuid, position, 0.7);
+            this.updateMeshMaterial(this.scene, uuid, baseMaterial.color, 0.5);
         }
 
         // Add new meshes to the scene that have been added to the indexed agent's history
-        for (let historyIndex = this.uuids[index].length; historyIndex < params.target[index - offset] + settings["Starting Snake Length"]; historyIndex++) {
+        for (let historyIndex = this.uuids[index].length; historyIndex <= params.target[index - offset] + settings.model.startingLength; historyIndex++) {
             const position = params.history[index - offset][historyIndex];
-            const uuid = this.addMesh(this.scene, position, Renderer.primaryGeometry, index < settings["Batch Size"] ? Renderer.secondaryGameObjectMaterialCurrent : Renderer.secondaryGameObjectMaterialNext);
+            const uuid = this.addMesh(this.scene, position, Renderer.primaryGeometry, baseMaterial);
             this.uuids[index].push(uuid);
         }
-
-        // Update the material type of the leading mesh in the indexed agent's history
-        const lastUUID = this.uuids[index][params.target[index - offset] + settings["Starting Snake Length"] - 1];
-        this.updateMeshMaterial(this.scene, lastUUID, index < settings["Batch Size"] ? Renderer.primaryGameObjectMaterialCurrent : Renderer.primaryGameObjectMaterialNext);
     }
 
     // Update a population in the scene
     updateParams(params: Data<number>, offset: number = 0) {
-        for (let paramIndex = offset; paramIndex < settings["Batch Size"] + offset; paramIndex++) {
+        for (let paramIndex = offset; paramIndex < settings.model.B + offset; paramIndex++) {
             this.updateParam(params, paramIndex, offset);
         }
     }
 
-    addGroup(positions: number[][], material: THREE.MeshStandardMaterial) {
-        this.group.push([]);
-        for (let groupIndex = 0; groupIndex < positions.length; groupIndex++) {
-            const currentPosition = positions[groupIndex];
-            const uuid = this.addMesh(this.scene, currentPosition, Renderer.primaryGeometry, material);
-            this.group[this.group.length - 1].push(uuid);
+    // Update a population's materials in the scene
+    updateParamsMaterial(params: Data<number>, colors: THREE.Color[]) {
+        for (let paramIndex = 0; paramIndex < params.position.length; paramIndex++) {
+            const uuid = this.uuids[paramIndex][0];
+            this.updateMeshMaterial(this.scene, uuid, colors[paramIndex], 0.7);
+            
         }
     }
 
-    addLineGroup(p0: number[][], p1: number[][]) {
+    addBoxGroup(key: string, positions: number[][], material: THREE.MeshStandardMaterial) {
+        if (key in Object.keys(this.group)) {
+            throw new Error(`Render group [${key}] already exists`);
+        }
+        
+        this.group[key] = [];
+        for (let groupIndex = 0; groupIndex < positions.length; groupIndex++) {
+            const currentPosition = positions[groupIndex];
+            const uuid = this.addMesh(this.scene, currentPosition, Renderer.primaryGeometry, material);
+            this.group[key].push(uuid);
+        }
+    }
+
+    addLineGroup(key: string, p0: number[][], p1: number[][]) {
         if (p0.length != p1.length) {
             throw new Error("List of start points and end points must be 1 to 1");
         }
 
-        this.group.push([]);
+        if (key in Object.keys(this.group)) {
+            throw new Error(`Render group [${key}] already exists`);
+        }
+
+        this.group[key] = [];
         for (let groupIndex = 0; groupIndex < p0.length; groupIndex++) {
             const currentP0 = p0[groupIndex];
             const currentP1 = p1[groupIndex];
-            const uuid = this.addLine(this.scene, currentP0, currentP1, Renderer.debugLineMaterial);
-            this.group[this.group.length - 1].push(uuid);
+            const uuid = this.addLine(this.scene, currentP0, currentP1, Renderer.primaryDebugLineMaterial);
+            this.group[key].push(uuid);
         }
     }
 
-    updateGroupPosition(index: number, positions: number[][], lerpAlpha?: number) {
-        if (this.group[index].length != positions.length) {
+    updateGroupPosition(key: string, positions: number[][], lerpAlpha?: number) {
+        if (this.group[key].length != positions.length) {
             throw new Error("Number of positions does not match the number of meshes in the indexed group");
         }
 
         for (let groupIndex = 0; groupIndex < positions.length; groupIndex++) {
-            const currentUUID = this.group[index][groupIndex];
+            const currentUUID = this.group[key][groupIndex];
             // Update the position
             const currentPosition = positions[groupIndex];
             this.updateMeshPosition(this.scene, currentUUID, currentPosition, lerpAlpha);
@@ -203,22 +222,23 @@ class Renderer {
         }
     }
 
-    updateGroupMaterial(index: number, materials: THREE.MeshStandardMaterial[]) {
-        if (this.group[index].length != materials.length) {
+    updateGroupMaterial(key: string, materials: THREE.MeshStandardMaterial[]) {
+
+        if (this.group[key].length != materials.length) {
             throw new Error("Number of materials does not match the number of meshes in the indexed group");
         }
 
         for (let groupIndex = 0; groupIndex < materials.length; groupIndex++) {
-            const currentUUID = this.group[index][groupIndex];
+            const currentUUID = this.group[key][groupIndex];
             // Update the position
             const currentMaterial = materials[groupIndex];
-            this.updateMeshMaterial(this.scene, currentUUID, currentMaterial);
+            this.updateMeshMaterial(this.scene, currentUUID, currentMaterial.color);
 
         }
     }
 
-    updateLineGroupPosition(index: number, p0: number[][], p1: number[][]) {
-        if (this.group[index].length != p0.length || this.group[index].length != p1.length) {
+    updateLineGroupPosition(key: string, p0: number[][], p1: number[][]) {
+        if (this.group[key].length != p0.length || this.group[key].length != p1.length) {
             throw new Error("Number of positions does not match the number of meshes in the indexed group");
         }
 
@@ -228,10 +248,21 @@ class Renderer {
 
         for (let groupIndex = 0; groupIndex < p0.length; groupIndex++) {
             // Update the position
-            const currentUUID = this.group[index][groupIndex];
+            const currentUUID = this.group[key][groupIndex];
             const currentP0 = p0[groupIndex];
             const currentP1 = p1[groupIndex];
             this.updateLinePosition(this.scene, currentUUID, currentP0, currentP1);
+        }
+    }
+
+    updateLineMaterial(scene: THREE.Scene, uuid: string, material: THREE.LineBasicMaterial) {
+        const line = scene.getObjectByProperty('uuid', uuid) as THREE.Line;
+        line.material = material;
+    }
+
+    updateLineGroupMaterial(key: string, material: THREE.LineBasicMaterial[]) { 
+        for (let lineIndex = 0; lineIndex < this.group[key].length; lineIndex++) {
+            this.updateLineMaterial(this.scene, this.group[key][lineIndex], material[lineIndex]);
         }
     }
 
@@ -242,8 +273,145 @@ class Renderer {
     // Remove all objects from the scene
     resetScene() {
         this.uuids = {};
+        this.group = {};
         this.scene.clear();
     }
 }
 
-export default Renderer;
+export class NEATRenderer extends Renderer {
+    controls: OrbitControls | null;
+    constructor(scene: THREE.Scene, renderer: THREE.WebGLRenderer, camera: THREE.Camera) {
+        super(scene, renderer, camera);
+        this.controls = new OrbitControls(this.camera, this.renderer.domElement);
+        this.controls.update();
+        this.controls.target.set(0, 0, 0);
+    }
+
+    renderInit(model: NEAT) {
+        this.addBatchParams(arraySync(model.state));
+        this.addBoxGroup('targets', model.target.arraySync(), Renderer.primaryFoodMaterial);
+        this.render();
+    }
+
+    renderStep(model: NEAT) {
+        if (this.controls == null) {
+            throw new Error("Must initialize orbit controls first with renderInit()");
+        }
+
+        this.updateParams(arraySync(model.state));
+
+        if (settings.renderer.showProjections) {
+            this.renderProjections(model);
+        } else if (this.group.hasOwnProperty('projections')) {
+            this.removeGroup('projections');
+        }
+
+        if (settings.renderer.showFitnessDelta) {
+            const fitnessDelta = model.fitnessDelta.arraySync() as number[];
+            const max = model.fitnessDelta.max().arraySync() as number;
+            const min = model.fitnessDelta.min().arraySync() as number;
+            const dt = max - min;
+            const colors = fitnessDelta.map((delta: number) => new THREE.Color(1 - (delta - min) / dt, (delta - min) / dt, 0))
+            Object.values(this.uuids).map((uuid: string[], index: number) => {
+                const mesh = this.scene.getObjectByProperty('uuid', uuid[0]) as THREE.Mesh;
+                (mesh.material as THREE.MeshStandardMaterial).color.lerp(colors[index], 0.5);
+            })
+            //console.log(colors)
+        } else {
+            Object.values(this.uuids).map((uuid: string[], index: number) => {
+                const mesh = this.scene.getObjectByProperty('uuid', uuid[0]) as THREE.Mesh;
+                (mesh.material as THREE.MeshStandardMaterial).color.lerp(Renderer.primaryMaterial.color, 0.5);
+            })
+        }
+
+        if (settings.renderer.showTargetRays) {
+            this.renderTargetRays(model);
+        } else if(this.group.hasOwnProperty('target_rays')) {
+            this.removeGroup('target_rays');
+        }
+
+        if (settings.renderer.showNormals) {
+            this.renderNormals(model);
+        } else if (this.group.hasOwnProperty('normals')) {
+            this.removeGroup('normals');
+        }
+
+        tf.tidy(() => {
+            const targetIndices = model.state.target.max(0).arraySync() as number;
+            this.updateGroupMaterial('targets', Array.from(Array(model.config.T).keys(), (i: number) => i == targetIndices ? NEATRenderer.primaryFoodMaterial : NEATRenderer.secondaryFoodMaterial))
+        })
+
+        const alive = model.state.active.arraySync() as number[];
+        Object.values(this.uuids).map((uuid: string[], index: number) => {
+            if (!alive[index]) {
+                const mesh = this.scene.getObjectByProperty('uuid', uuid[0]) as THREE.Mesh;
+                (mesh.material as THREE.MeshStandardMaterial).color.lerp(Renderer.secondaryMaterial.color, 0.5);
+            }
+        })
+
+        if (settings.renderer.showBest) {
+            (model.state.target.greaterEqual(model.state.target.max()).cast('int32').arraySync() as number[])
+            .map((value: number, index: number) => {
+                if (value == 0) {
+                    const mesh = this.scene.getObjectByProperty('uuid', this.uuids[index][0]) as THREE.Mesh;
+                    (mesh.material as THREE.MeshStandardMaterial).color.lerp(Renderer.secondaryMaterial.clone().color, 0.5);
+                }
+            });
+        }
+
+        
+        this.controls.update();
+        this.render();
+    }
+
+    removeGroup(key: string) {
+        this.group[key].map((uuid: string) => {
+            const mesh = this.scene.getObjectByProperty('uuid', uuid) as THREE.Mesh;
+            this.scene.remove(mesh)
+        })
+        delete this.group[key];
+    }
+
+    renderProjections(model: NEAT) {
+        tf.tidy(() => {
+            const proj = projectDirectionToBounds(model.state.position, model.state.direction, model.config.boundingBoxLength);
+            const projectionPositions = (proj.arraySync() as number[][]);
+            if (!this.group.hasOwnProperty('projections')) {
+                this.addBoxGroup('projections', projectionPositions, Renderer.debugMaterial);
+                return;
+            }
+            this.updateGroupPosition('projections', projectionPositions, 1);
+        })
+    }
+
+    renderNormals(model: NEAT) {
+        tf.tidy(() => {
+            const positionTile = model.state.position.expandDims(1).tile([1, model.config.C, 1]).reshape([model.config.B * model.config.C, model.config.C]);
+            const directionTile = positionTile.add(model.state.direction.reshape([model.config.B * model.config.C, model.config.C]));
+            if (!this.group.hasOwnProperty('normals')) {
+                this.addLineGroup('normals', positionTile.arraySync() as number[][], directionTile.arraySync() as number[][]);
+                return;
+            }
+            this.updateLineGroupPosition('normals', positionTile.arraySync() as number[][], directionTile.arraySync() as number[][]);
+            
+        })
+    }
+
+    renderTargetRays(model: NEAT) {
+        tf.tidy(() => {
+            const targetPositions = model.target.gather(model.state.target).arraySync() as number[][];
+            const position = model.state.position.arraySync() as number[][];
+            if (!this.group.hasOwnProperty('target_rays')) {
+                this.addLineGroup('target_rays', targetPositions, position);
+                return;
+            }
+            this.updateLineGroupPosition('target_rays', targetPositions, position);
+
+            if (settings.renderer.showBest) {
+                this.updateLineGroupMaterial('target_rays', (model.state.target.greaterEqual(model.state.target.max()).cast('int32').arraySync() as number[]).map((value: number) => value == 1 ? Renderer.primaryDebugLineMaterial : Renderer.secondaryDebugLineMaterial));
+                return;
+            }
+            this.updateLineGroupMaterial('target_rays', Array.from(Array(settings.model.B).keys(), () => Renderer.primaryDebugLineMaterial));
+        })
+    }
+}
