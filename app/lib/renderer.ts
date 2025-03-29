@@ -5,6 +5,7 @@ import NEAT from './optimizer';
 import { calculateNearbyBounds } from './layers/inputnorm';
 import { arraySync, Data } from './model';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { clamp } from './util';
 
 const projectDirectionToBounds = (position: tf.Tensor2D, direction: tf.Tensor3D, scale: number): tf.Tensor2D => tf.tidy(() => {
     const B = position.shape[0];
@@ -311,7 +312,7 @@ export class NEATRenderer extends Renderer {
             const max = model.fitnessDelta.max().arraySync() as number;
             const min = model.fitnessDelta.min().arraySync() as number;
             const dt = max - min;
-            const colors = fitnessDelta.map((delta: number) => new THREE.Color(1 - (delta - min) / dt, (delta - min) / dt, 0))
+            const colors = fitnessDelta.map((delta: number) => new THREE.Color(clamp(1 - (delta - min) / dt, 0, 1), clamp((delta - min) / dt, 0, 1), 0))
             Object.values(this.uuids).map((uuid: string[], index: number) => {
                 const mesh = this.scene.getObjectByProperty('uuid', uuid[0]) as THREE.Mesh;
                 (mesh.material as THREE.MeshStandardMaterial).color.lerp(colors[index], 0.5);
@@ -354,7 +355,7 @@ export class NEATRenderer extends Renderer {
             .map((value: number, index: number) => {
                 if (value == 0) {
                     const mesh = this.scene.getObjectByProperty('uuid', this.uuids[index][0]) as THREE.Mesh;
-                    (mesh.material as THREE.MeshStandardMaterial).color.lerp(Renderer.secondaryMaterial.clone().color, 0.5);
+                    (mesh.material as THREE.MeshStandardMaterial).color.lerp(new THREE.Color(0, 0, 0), 0.5);
                 }
             });
         }

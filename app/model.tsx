@@ -154,10 +154,15 @@ const TensorFlowModel: React.FC = () => {
             };
 
             const start = Date.now();
+            //trainer.step(model);
             trainer.step(model, renderer);
             const end = Date.now();
 
             const maxFitness = trainer.state.fitness.max().arraySync() as number;
+            if (stats.maxFitnessGlobal < maxFitness) {
+                stats.maxFitnessGlobal = maxFitness;
+            }
+
             stats.maxFitness = maxFitness;
             stats.fps = 1 / ((end - start) / 1000);
             

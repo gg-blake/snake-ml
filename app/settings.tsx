@@ -40,7 +40,7 @@ var settings: Settings = {
         C: 3,
         startingLength: 5,
         boundingBoxLength: 30,
-        units: 40,
+        units: 100,
         fitnessGraphParams: {
             a: 10,
             b: 1.5,
@@ -50,23 +50,25 @@ var settings: Settings = {
         }
     },
     trainer: {
-        mutationFactor: 0.05,
+        mutationFactor: 0.1,
         mutationRate: 0
     }
 }
 
 export interface Stats {
     maxFitness: number;
+    maxFitnessGlobal: number;
     fps: number;
 }
 
 export var stats: Stats = {
     maxFitness: settings.model.TTL,
+    maxFitnessGlobal: settings.model.TTL,
     fps: 0
 }
 
 
-settings.trainer.mutationRate = (1 / settings.model.B) * 50;
+settings.trainer.mutationRate = 5/settings.model.B;
 export {settings};
 
 function addTrainingParameterBinding(pane: Pane | TabPageApi | FolderApi, key: keyof Settings["trainer"], params: BindingParams, killRequest: React.MutableRefObject<boolean>) {
@@ -144,6 +146,11 @@ export function SettingsPane({ killRequest, endRequest }: { killRequest: React.M
         pane.addBinding(stats, 'maxFitness', {
             readonly: true,
             label: "Max Fitness"
+        });
+
+        pane.addBinding(stats, 'maxFitnessGlobal', {
+            readonly: true,
+            label: "Max Fitness All-time"
         });
 
         pane.addBinding(stats, 'fps', {

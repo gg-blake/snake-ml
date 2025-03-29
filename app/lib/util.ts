@@ -41,3 +41,15 @@ export function generatePlaneIndices(n: number): tf.Tensor2D {
         return tf.stack<tf.Tensor1D>(_tensorList) as tf.Tensor2D;
     })
 }
+
+export function clamp(x: number, min: number, max: number): number {
+    if (x > max) {
+        return max
+    }
+
+    if (x < min) {
+        return min
+    }
+
+    return x
+}

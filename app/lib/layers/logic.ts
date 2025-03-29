@@ -25,8 +25,11 @@ type LogicInputs = [
 ];
 
 export default class Logic extends GameLayer {
+    maxFitness: tf.Variable<tf.Rank.R1>;
+
     constructor(config: LayerArgs, gameConfig: GameLayerConfig) {
         super(config, gameConfig);
+        this.maxFitness = tf.variable(tf.ones([gameConfig.B]).mul(gameConfig.TTL));
     }
 
     call(inputs: LogicInputs): [tf.Tensor1D, tf.Tensor1D, tf.Tensor1D] {
@@ -40,11 +43,15 @@ export default class Logic extends GameLayer {
             const targetDirection = calculateNearbyTarget(this.B, this.T, this.C, inputs[0], inputs[1], inputs[2]).slice([0, 0], [this.B, 1]).squeeze() as tf.Tensor1D;
             
             const baseFitness = inputs[3].mul(this.TTL);
+            
             const fitnessDelta = calculateFitness(this.B, this.T, this.C, targetDirection, P.a, P.b, P.c, P.min, P.max).mul(inputs[5]).mul(5) as tf.Tensor1D;
             const nextDistance = tf.squaredDifference(inputs[0], inputs[2]).sum(1).sqrt();
             const touchingFood = nextDistance.lessEqual(5).cast("float32");
             const nextFitness = inputs[4].add(fitnessDelta).add(touchingFood.mul(this.TTL*2)) as tf.Tensor1D;
-            const isAliveMask = inputs[4].greater(baseFitness).cast('int32').mul(inputs[5]).mul(outOfBounds) as tf.Tensor1D;
+            
+            const isAliveMask = inputs[4].greater(0).cast('int32').mul(inputs[5]).mul(outOfBounds) as tf.Tensor1D;
+            const maxFitness = tf.stack([this.maxFitness, nextFitness], 1).max(1) as tf.Tensor1D;
+            this.maxFitness.assign(maxFitness);
             const nextTargetIndices = inputs[3].add(touchingFood.cast('int32')) as tf.Tensor1D;
             return [nextFitness, nextTargetIndices, isAliveMask];
         });

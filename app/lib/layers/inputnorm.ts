@@ -50,7 +50,7 @@ export const calculateNearbyTarget: IntermediateLayer<[tf.Tensor2D, tf.Tensor3D,
     // target: (B, C)
 
     // Translate vector space, positioning position at the origin
-    const targetRelativePosition = target.add<tf.Tensor2D>(position.neg()); // (B, C)
+    const targetRelativePosition = target.sub<tf.Tensor2D>(position); // (B, C)
     const targetBroadcasted: tf.Tensor3D = targetRelativePosition.expandDims(1).tile([1, C, 1]); // (B, C, C)
 
     // Calculate cosine similarity between normalized targets and direction vectors
@@ -61,18 +61,15 @@ export const calculateNearbyTarget: IntermediateLayer<[tf.Tensor2D, tf.Tensor3D,
     return similarity as tf.Tensor2D
 });
 
-const raycast = (position: tf.Tensor2D, direction: tf.Tensor3D, scale: number): tf.Tensor2D => tf.tidy(() => {
+const raycast: IntermediateLayer<[tf.Tensor2D, tf.Tensor3D, tf.Tensor3D, number], tf.Tensor2D> = (B, T, C, position, direction, normals, scale) => tf.tidy(() => {
     // position: (B, C)
     // direction: (B, C, C)
-    const B = position.shape[0];
-    const C = position.shape[1];
-
-    const boxNormals = tf.concat([tf.eye(C), tf.eye(C).neg()], 0).expandDims(0).tile([B, 1, 1]) as tf.Tensor3D; // (B, 2C, C)
+    
     const positionTile = position.expandDims(1).tile([1, 2 * C, 1]) as tf.Tensor3D; // (B, 2C, C)
-    const dot1 = dotProduct<tf.Tensor3D>(positionTile, boxNormals, 2);
+    const dot1 = dotProduct<tf.Tensor3D>(positionTile, normals, 2);
     const diff1 = tf.sub(scale, dot1) as tf.Tensor2D;
     const forwardDirectionTile = direction.slice([0, 0, 0], [B, 1, C]).tile([1, 2 * C, 1]) as tf.Tensor3D; // (B, 2C, C)
-    const dot2 = dotProduct<tf.Tensor3D>(forwardDirectionTile, boxNormals, 2);
+    const dot2 = dotProduct<tf.Tensor3D>(forwardDirectionTile, normals, 2);
     const div1 = tf.div(diff1, dot2) as tf.Tensor2D;
     
     return div1
@@ -94,8 +91,9 @@ const inBounds = (A: tf.Tensor2D): tf.Tensor2D => tf.tidy(() => {
     return xor
 })
 
-export const calculateNearbyBounds = (position: tf.Tensor2D, direction: tf.Tensor3D, scale: number) => tf.tidy(() => {
-    const raycasted = raycast(position, direction, scale);
+export const calculateNearbyBounds: IntermediateLayer<[tf.Tensor2D, tf.Tensor3D, number], tf.Tensor1D> = (B, T, C, position: tf.Tensor2D, direction: tf.Tensor3D, scale: number) => tf.tidy(() => {
+    const boxNormals = tf.concat([tf.eye(C), tf.eye(C).neg()], 0).expandDims(0).tile([B, 1, 1]) as tf.Tensor3D; // (B, 2C, C)
+    const raycasted = raycast(B, T, C, position, direction, boxNormals, scale);
     const mask = inBounds(raycasted).cast<tf.Tensor2D>('float32');
     const distance = closestDistance(raycasted.mul(mask));
     
@@ -132,19 +130,18 @@ export default class InputNorm extends GameLayer {
         // (B, 2C+2, C)
         return tf.tidy(() => {
             // Food data processing and vectorizing (n_dims)
-            const nearbyFood = calculateNearbyTarget(this.B, this.T, this.C, inputs[0], inputs[1], inputs[2]); // (B, C)
+            const nearbyFood = calculateNearbyTarget(this.B, this.T, this.C, inputs[0], inputs[1], inputs[2]).mul(2).sub(1); // (B, C)
             // Body data processing and vectorizing (5) (n_dims * 2 - 1)
             const nearbyBody = calculateNearbyBody(this.B, this.T, this.C, inputs[0], inputs[1], inputs[3], 0.95, 1000).slice([0, 0], [this.B, 1]); // (B, 1)
             // Bounds data processing and vectorizing (3) (n_dims * 2 - 1)
-            const nearbyBounds = calculateNearbyBounds(inputs[0], inputs[1], this.boundingBoxLength).expandDims(-1); // (B, 1)
-            //nearbyBody.print()
+            const nearbyBounds = calculateNearbyBounds(this.B, this.T, this.C, inputs[0], inputs[1], this.boundingBoxLength).expandDims(-1); // (B, 1)
             // Concatenate all sensory data to a single input vector
-            return tf.concat([nearbyFood, nearbyBody, nearbyBounds], 1).expandDims(-1) as tf.Tensor3D; // (B, C + 2)
+            return tf.concat([nearbyFood, nearbyBody, nearbyBounds], 1).expandDims(-1) as tf.Tensor3D; // (B, 3)
         })
     }
 
     computeOutputShape(inputShape: tf.Shape[]): tf.Shape | tf.Shape[] {
-        return [this.B, this.C+2, 1];
+        return [this.B, this.C + 2, 1];
     }
     
     static get className() {

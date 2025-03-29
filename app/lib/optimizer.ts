@@ -118,14 +118,9 @@ export default class NEAT implements NEATI {
 
     evolve(model: tf.LayersModel) {
         tf.tidy(() => {
-            let fit = this.state.fitness.arraySync() as number[];
-            const rank = Array.from(Array(this.config.B).keys());
-            const total = rank.reduce((acc: number, curr: number) => acc + curr, 0); // Broadcast the total of all ranks to 1-d tensor
-            const probabilities = tf.tensor1d(rank
-                .toSorted((a: number, b: number) => fit[b] - fit[a])
-                .map((val: number) => val / total)); // Sort in descending order by fitness
-            const indicesA = tf.multinomial(probabilities, this.config.B);
-            const indicesB = tf.multinomial(probabilities, this.config.B);
+            let probs = this.state.fitness.sub(this.state.fitness.sum().div(this.config.B)).clipByValue(0, Infinity).softmax() as tf.Tensor1D;
+            const indicesA = tf.multinomial(probs, this.config.B);
+            const indicesB = tf.multinomial(probs, this.config.B);
             const weights = model.getWeights(true);
             // Selector operator
             const weightsA = weights.map((layer: tf.Tensor) => layer.gather(indicesA));
@@ -154,8 +149,6 @@ function main() {
         mutationRate: 1/settings.model.B,
         mutationFactor: 0.01
     }
-
-    
     
     const optimizer = new NEAT(settings.model, optimizerConfig);
     const model = getModel(settings.model);
@@ -165,6 +158,4 @@ function main() {
         console.timeEnd("step");
         console.log(tf.memory().numTensors)
     }
-
-
 }
