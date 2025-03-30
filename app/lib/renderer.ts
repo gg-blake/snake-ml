@@ -7,10 +7,8 @@ import { arraySync, Data } from './model';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { clamp } from './util';
 
-const projectDirectionToBounds = (position: tf.Tensor2D, direction: tf.Tensor3D, scale: number): tf.Tensor2D => tf.tidy(() => {
-    const B = position.shape[0];
-    const C = position.shape[1];
-    const distance = calculateNearbyBounds(position, direction, scale).expandDims(-1).tile([1, C]) as tf.Tensor2D;
+const projectDirectionToBounds = (B: number, T: number, C: number, position: tf.Tensor2D, direction: tf.Tensor3D, scale: number): tf.Tensor2D => tf.tidy(() => {
+    const distance = calculateNearbyBounds(B, T, C, position, direction, scale).expandDims(-1).tile([1, C]) as tf.Tensor2D;
     
     const forwardVectors = direction.slice([0, 0, 0], [B, 1, C]).squeeze([1]) as tf.Tensor2D;
     const proj = tf.add(position, tf.mul(forwardVectors, distance)) as tf.Tensor2D;
@@ -375,7 +373,7 @@ export class NEATRenderer extends Renderer {
 
     renderProjections(model: NEAT) {
         tf.tidy(() => {
-            const proj = projectDirectionToBounds(model.state.position, model.state.direction, model.config.boundingBoxLength);
+            const proj = projectDirectionToBounds(model.config.B, model.config.T, model.config.C, model.state.position, model.state.direction, model.config.boundingBoxLength);
             const projectionPositions = (proj.arraySync() as number[][]);
             if (!this.group.hasOwnProperty('projections')) {
                 this.addBoxGroup('projections', projectionPositions, Renderer.debugMaterial);
