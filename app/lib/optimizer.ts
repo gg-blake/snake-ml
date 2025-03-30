@@ -68,10 +68,15 @@ export default class NEAT implements NEATI {
     step(model: tf.LayersModel, renderer?: NEATRenderer): void {
         tf.tidy(() => {
             if (this.state.active.equal(0).all().arraySync() == 1) {
-                this.evolve(model)
+                if (this.state.target.greater(0).any().arraySync() == 1) {
+                    this.target.assign(tf.concat([tf.randomUniform([1, this.config.C]), this.target.slice([1, 0], [this.config.T - 1, this.config.C])], 0));
+                }
+
+                this.evolve(model);
                 this.resetState();
                 this.stepCount = 0;
                 this.epochCount++;
+                
                 return;
             }
 
@@ -97,6 +102,7 @@ export default class NEAT implements NEATI {
     }
 
     resetState() {
+        this.fitnessDelta.assign(tf.zeros([this.config.B]));
         this.setState = [
             tf.zeros([this.config.B, this.config.C], 'float32'),
             tf.eye(this.config.C, ...[, ,], 'float32').expandDims(0).tile([this.config.B, 1, 1]),

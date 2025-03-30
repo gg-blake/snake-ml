@@ -8,16 +8,18 @@ export default class FeedForward extends GameLayer {
     public bInputHidden: undefined | tf.LayerVariable;
     public wHiddenOutput: undefined | tf.LayerVariable;
     public bHiddenOutput: undefined | tf.LayerVariable;
+    public seed?: number;
 
-    constructor(config: LayerArgs, gameConfig: GameLayerConfig) {
+    constructor(config: LayerArgs, gameConfig: GameLayerConfig, seed?: number) {
         super(config, gameConfig);
+        this.seed = seed;
     }
 
     build() {
-        this.wInputHidden = this.addWeight('wInputHidden', [this.B, this.units, this.C + 2], this.dtype, tf.initializers.randomUniform({ minval: -1, maxval: 1 }))
-        this.bInputHidden = this.addWeight('bInputHidden', [this.B, this.units, 1], this.dtype, tf.initializers.randomUniform({ minval: -1, maxval: 1 }))
-        this.wHiddenOutput = this.addWeight('wHiddenOutput', [this.B, (((this.C - 1) * this.C)), this.units], this.dtype, tf.initializers.randomUniform({ minval: -1, maxval: 1 }))
-        this.bHiddenOutput = this.addWeight('bHiddenOutput', [this.B, (((this.C - 1) * this.C)), 1], this.dtype, tf.initializers.randomUniform({ minval: -1, maxval: 1 }))
+        this.wInputHidden = this.addWeight('wInputHidden', [this.B, this.units, this.C + 1], this.dtype, tf.initializers.randomUniform({ minval: -1, maxval: 1, seed: this.seed }))
+        this.bInputHidden = this.addWeight('bInputHidden', [this.B, this.units, 1], this.dtype, tf.initializers.randomUniform({ minval: -1, maxval: 1, seed: this.seed }))
+        this.wHiddenOutput = this.addWeight('wHiddenOutput', [this.B, 2 * (this.C - 1), this.units], this.dtype, tf.initializers.randomUniform({ minval: -1, maxval: 1, seed: this.seed }))
+        this.bHiddenOutput = this.addWeight('bHiddenOutput', [this.B, 2 * (this.C - 1), 1], this.dtype, tf.initializers.randomUniform({ minval: -1, maxval: 1, seed: this.seed }))
     }
 
     call(inputs: [tf.Tensor3D]): tf.Tensor2D {
@@ -35,7 +37,7 @@ export default class FeedForward extends GameLayer {
 
     computeOutputShape(inputShape: tf.Shape | tf.Shape[]): tf.Shape | tf.Shape[] {
         //return inputShape;
-        return [this.B, (((this.C - 1) * this.C))];
+        return [this.B, 2 * (this.C - 1)];
     }
     
     static get className() {

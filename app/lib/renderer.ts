@@ -312,10 +312,10 @@ export class NEATRenderer extends Renderer {
             const max = model.fitnessDelta.max().arraySync() as number;
             const min = model.fitnessDelta.min().arraySync() as number;
             const dt = max - min;
-            const colors = fitnessDelta.map((delta: number) => new THREE.Color(clamp(1 - (delta - min) / dt, 0, 1), clamp((delta - min) / dt, 0, 1), 0))
             Object.values(this.uuids).map((uuid: string[], index: number) => {
                 const mesh = this.scene.getObjectByProperty('uuid', uuid[0]) as THREE.Mesh;
-                (mesh.material as THREE.MeshStandardMaterial).color.lerp(colors[index], 0.5);
+                const delta = fitnessDelta[index];
+                (mesh.material as THREE.MeshStandardMaterial).color.setRGB(clamp(1 - (delta - min) / dt, 0, 1), clamp((delta - min) / dt, 0, 1), 0)
             })
             //console.log(colors)
         } else {
@@ -346,16 +346,16 @@ export class NEATRenderer extends Renderer {
         Object.values(this.uuids).map((uuid: string[], index: number) => {
             if (!alive[index]) {
                 const mesh = this.scene.getObjectByProperty('uuid', uuid[0]) as THREE.Mesh;
-                (mesh.material as THREE.MeshStandardMaterial).color.lerp(Renderer.secondaryMaterial.color, 0.5);
+                (mesh.material as THREE.MeshStandardMaterial).color.setRGB(0, 0, 0);
             }
         })
 
         if (settings.renderer.showBest) {
-            (model.state.target.greaterEqual(model.state.target.max()).cast('int32').arraySync() as number[])
+            (model.state.fitness.greaterEqual(model.state.fitness.mul(model.state.active.cast('float32')).max()).cast('int32').arraySync() as number[])
             .map((value: number, index: number) => {
                 if (value == 0) {
                     const mesh = this.scene.getObjectByProperty('uuid', this.uuids[index][0]) as THREE.Mesh;
-                    (mesh.material as THREE.MeshStandardMaterial).color.lerp(new THREE.Color(0, 0, 0), 0.5);
+                    (mesh.material as THREE.MeshStandardMaterial).color.setRGB(0, 0, 0);
                 }
             });
         }
@@ -409,10 +409,11 @@ export class NEATRenderer extends Renderer {
             this.updateLineGroupPosition('target_rays', targetPositions, position);
 
             if (settings.renderer.showBest) {
-                this.updateLineGroupMaterial('target_rays', (model.state.target.greaterEqual(model.state.target.max()).cast('int32').arraySync() as number[]).map((value: number) => value == 1 ? Renderer.primaryDebugLineMaterial : Renderer.secondaryDebugLineMaterial));
+                this.updateLineGroupMaterial('target_rays', (model.state.fitness.greaterEqual(model.state.fitness.mul(model.state.active.cast("float32")).max()).cast('int32').arraySync() as number[]).map((value: number) => value == 1 ? Renderer.primaryDebugLineMaterial : Renderer.secondaryDebugLineMaterial));
                 return;
             }
-            this.updateLineGroupMaterial('target_rays', Array.from(Array(settings.model.B).keys(), () => Renderer.primaryDebugLineMaterial));
+
+            this.updateLineGroupMaterial('target_rays', (model.state.active.arraySync() as number[]).map((value: number) => value == 1 ? Renderer.primaryDebugLineMaterial : Renderer.secondaryDebugLineMaterial));
         })
     }
 }

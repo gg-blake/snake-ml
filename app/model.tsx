@@ -9,7 +9,7 @@ import '@tensorflow/tfjs-backend-webgl';
 import {NEATRenderer} from './lib/renderer';
 import { Skeleton } from "../components/ui/skeleton"
 import { ThemeProvider } from "../components/theme-provider"
-import { SettingsPane, settings, Settings, stats } from './settings';
+import { SettingsPane, settings, pendingSettings, Settings, stats } from './settings';
 import getModel from "./lib/model";
 import { toast } from "sonner";
 
@@ -91,9 +91,9 @@ const TensorFlowModel: React.FC = () => {
         renderer.current.scene.add(ambientLight);
         renderer.current.scene.add(mainLight);
 
+
         // Enable user camera controls
         trainerRef.current = new NEAT(settings.model, settings.trainer);
-        
     }
 
     const train = (model: tf.LayersModel, trainer: NEAT, renderer: NEATRenderer) => {
@@ -137,7 +137,7 @@ const TensorFlowModel: React.FC = () => {
                     });
                     const compactModel = getModel({...settings.model, B: 1});
                     compactModel.setWeights(bestWeights);
-                    model.save('localstorage://my-model-1')
+                    model.save('downloads://my-model')
                     .then(() => toast("Checkpoint saved successully to local storage"));
                 })
                 
@@ -185,7 +185,7 @@ const TensorFlowModel: React.FC = () => {
         if (!isStarted) return;
         if (!renderer.current || !trainerRef.current || !modelRef.current) return;
         endRequest.current = false;
-        tf.loadLayersModel('localstorage://my-model-1')
+        tf.loadLayersModel('downloads://my-model')
         .then((model: tf.LayersModel) => {
             modelRef.current = model;
             console.log(modelRef.current)
@@ -202,6 +202,7 @@ const TensorFlowModel: React.FC = () => {
         if (!isStarted) return;
         if (isStarted) {
             endRequest.current = true;
+            Object.assign(settings, pendingSettings);
             setIsStarted(false);
         }
     }

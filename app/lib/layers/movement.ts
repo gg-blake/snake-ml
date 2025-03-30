@@ -37,9 +37,8 @@ export default class Movement extends GameLayer {
     call(inputs: MovementInputs): [tf.Tensor2D, tf.Tensor3D] {
         return tf.tidy(() => {
             const planeIndices = this.planeIndices.reverse(1).concat(this.planeIndices, 0);
-            const choices = tf.multinomial(inputs[2], 1)
-            const indices = planeIndices.gather(choices.squeeze());
-            const nextDirections = rotateBatch(this.B, this.T, this.C, inputs[1], indices, tf.ones([this.B]).mul(Math.PI * 0.1));
+            const indices = planeIndices.gather(inputs[2].argMax(1));
+            const nextDirections = rotateBatch(this.B, this.T, this.C, inputs[1], indices, inputs[2].max(1).mul(Math.PI / 2));
             const nextVelocity: tf.Tensor2D = nextDirections.slice([0, 0], [this.B, 1]).squeeze([1]);
             const nextPositions: tf.Tensor2D = inputs[0].add(nextVelocity.mul(1).mul(inputs[3].expandDims(-1).tile([1, this.C])));
             return [ nextPositions, nextDirections ];

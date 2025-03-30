@@ -55,6 +55,8 @@ var settings: Settings = {
     }
 }
 
+var pendingSettings = settings;
+
 export interface Stats {
     maxFitness: number;
     maxFitnessGlobal: number;
@@ -69,17 +71,18 @@ export var stats: Stats = {
 
 
 settings.trainer.mutationRate = 5/settings.model.B;
-export {settings};
+pendingSettings.trainer.mutationRate = settings.trainer.mutationRate
+export {settings, pendingSettings};
 
 function addTrainingParameterBinding(pane: Pane | TabPageApi | FolderApi, key: keyof Settings["trainer"], params: BindingParams, killRequest: React.MutableRefObject<boolean>) {
-    pane.addBinding(settings.trainer, key, params)
+    pane.addBinding(pendingSettings.trainer, key, params)
     .on('change', () => {
         killRequest.current! = true;
     })
 }
 
 function addModelParameterBinding(pane: Pane | TabPageApi | FolderApi, key: keyof Settings["model"], params: BindingParams, endRequest: React.MutableRefObject<boolean>) {
-    pane.addBinding(settings.model, key, params)
+    pane.addBinding(pendingSettings.model, key, params)
     .on('change', () => {
         endRequest.current! = true;
     })
@@ -122,23 +125,23 @@ export function SettingsPane({ killRequest, endRequest }: { killRequest: React.M
             'title': 'Fitness Graph'
         })
 
-        fitnessGraphParamsFolder.addBinding(settings.model.fitnessGraphParams, 'a', { step: 0.0001, min: -50, max: 50 });
-        fitnessGraphParamsFolder.addBinding(settings.model.fitnessGraphParams, 'b', { step: 0.0001, min: -50, max: 50 });
-        fitnessGraphParamsFolder.addBinding(settings.model.fitnessGraphParams, 'c', { step: 0.0001, min: -50, max: 50 });
-        fitnessGraphParamsFolder.addBinding(settings.model.fitnessGraphParams, 'min');
-        fitnessGraphParamsFolder.addBinding(settings.model.fitnessGraphParams, 'max');
+        fitnessGraphParamsFolder.addBinding(pendingSettings.model.fitnessGraphParams, 'a', { step: 0.0001, min: -50, max: 50 });
+        fitnessGraphParamsFolder.addBinding(pendingSettings.model.fitnessGraphParams, 'b', { step: 0.0001, min: -50, max: 50 });
+        fitnessGraphParamsFolder.addBinding(pendingSettings.model.fitnessGraphParams, 'c', { step: 0.0001, min: -50, max: 50 });
+        fitnessGraphParamsFolder.addBinding(pendingSettings.model.fitnessGraphParams, 'min');
+        fitnessGraphParamsFolder.addBinding(pendingSettings.model.fitnessGraphParams, 'max');
 
-        tab.pages[1].addBinding(settings.renderer, 'showProjections', { label: 'Show Snake Projections'});
-        tab.pages[1].addBinding(settings.renderer, 'showFitnessDelta', { label: 'Show Fitness Delta' });
-        tab.pages[1].addBinding(settings.renderer, 'showNormals', { label: 'Show Velocity Vectors' });
-        tab.pages[1].addBinding(settings.renderer, 'showTargetRays', { label: 'Show Target Rays' });
-        tab.pages[1].addBinding(settings.renderer, 'showBest', { label: 'Show Best Performers' });
+        tab.pages[1].addBinding(pendingSettings.renderer, 'showProjections', { label: 'Show Snake Projections'});
+        tab.pages[1].addBinding(pendingSettings.renderer, 'showFitnessDelta', { label: 'Show Fitness Delta' });
+        tab.pages[1].addBinding(pendingSettings.renderer, 'showNormals', { label: 'Show Velocity Vectors' });
+        tab.pages[1].addBinding(pendingSettings.renderer, 'showTargetRays', { label: 'Show Target Rays' });
+        tab.pages[1].addBinding(pendingSettings.renderer, 'showBest', { label: 'Show Best Performers' });
 
         
         pane.addBinding(stats, 'maxFitness', {
             readonly: true,
             view: 'graph',
-            min: settings.model.TTL,
+            min: pendingSettings.model.TTL,
             max: 1000,
             label: "Max Fitness"
         });

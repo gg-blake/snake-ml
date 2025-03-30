@@ -2,9 +2,8 @@ import * as tf from '@tensorflow/tfjs';
 import { LayerArgs } from '@tensorflow/tfjs-layers/dist/engine/topology';
 import '@tensorflow/tfjs-backend-webgl';
 import GameLayer, { GameLayerConfig, IntermediateLayer } from './gamelayer';
-import { dotProduct } from '../util';
 import { settings } from "../../settings";
-
+import { generatePlaneIndices, project, dotProduct, cosineSimilarity } from '../util';
 
 const projectBatchUOntoV: IntermediateLayer<[tf.Tensor3D, tf.Tensor3D], tf.Tensor4D> = (B, T, C, U, V) => tf.tidy(() => {
     const dot1 = tf.matMul(U, V, false, true);
@@ -44,21 +43,28 @@ const calculateNearbyBody: IntermediateLayer<[tf.Tensor2D, tf.Tensor3D, tf.Tenso
     return output as tf.Tensor2D
 });
 
-export const calculateNearbyTarget: IntermediateLayer<[tf.Tensor2D, tf.Tensor3D, tf.Tensor2D], tf.Tensor2D> = (B, T, C, position, direction, target) => tf.tidy(() => {
+export const calculateNearbyTarget: IntermediateLayer<[tf.Tensor2D, tf.Tensor3D, tf.Tensor2D, tf.Tensor2D], tf.Tensor2D> = (B, T, C, position, direction, target, planeIndices) => tf.tidy(() => {
     // position: (B, C)
     // direction: (B, C, C)
     // target: (B, C)
 
     // Translate vector space, positioning position at the origin
     const targetRelativePosition = target.sub<tf.Tensor2D>(position); // (B, C)
-    const targetBroadcasted: tf.Tensor3D = targetRelativePosition.expandDims(1).tile([1, C, 1]); // (B, C, C)
+    const targetBroadcasted: tf.Tensor2D = targetRelativePosition.tile([2 * (C - 1), 1]); // (2 * B * (C - 1), C)
 
-    // Calculate cosine similarity between normalized targets and direction vectors
-    const dot = tf.mul(direction, targetBroadcasted).sum(2); // (B, C)
-    const dotNorm = tf.mul(tf.norm(direction, 'euclidean', 2), tf.norm(targetBroadcasted, 'euclidean', 2)); // (B, C)
-    const similarity = tf.divNoNan(dot, dotNorm); // (B, C)
+    const relevantPlanesIndices = planeIndices.expandDims(0).tile([B, 1, 1]) // (B, C - 1, 2)
+    const relevantPlanes = direction.gather(relevantPlanesIndices, 1, 1); // (B, C - 1, 2, C)
+    const relevantPlanesFlat = relevantPlanes.reshape([2 * B * (C - 1), C]) as tf.Tensor2D; // (2 * B * (C - 1), C)
+    const projections = project(targetBroadcasted, relevantPlanesFlat);
+    const projectionsReshaped = projections.reshape([B * (C - 1), 2, C]); // (B * (C - 1), 2, C)
+    const projectionPlanes = projectionsReshaped.sum(1, true).tile([1, 2, 1]).reshape([2 * B * (C - 1), C]) as tf.Tensor2D; // (2 * B * (C - 1), C)
+    const similarity = cosineSimilarity(projectionPlanes, relevantPlanesFlat); // (2 * B * (C - 1),)
+    const similarityReshaped = similarity.reshape([B, C - 1, 2]) as tf.Tensor2D; // (B, C - 1, 2)
+    const x = similarityReshaped.slice([0, 0, 0], [B, C - 1, 1]).squeeze([2]); // (B * (C - 1),)
+    const y = similarityReshaped.slice([0, 0, 1], [B, C - 1, 1]).squeeze([2]); // (B * (C - 1),)
+    const atan2 = tf.atan2(y, x).div(Math.PI).reshape([B, C - 1]) as tf.Tensor2D;
     
-    return similarity as tf.Tensor2D
+    return atan2
 });
 
 const raycast: IntermediateLayer<[tf.Tensor2D, tf.Tensor3D, tf.Tensor3D, number], tf.Tensor2D> = (B, T, C, position, direction, normals, scale) => tf.tidy(() => {
@@ -115,6 +121,8 @@ type InputNormSymbolicInputs = [
 ];
 
 export default class InputNorm extends GameLayer {
+    planeIndices: tf.Tensor2D;
+
     constructor(config: LayerArgs, gameConfig: GameLayerConfig) {
         super(config, gameConfig);
         this.inputSpec = [
@@ -123,6 +131,7 @@ export default class InputNorm extends GameLayer {
             {shape: [this.B, this.C]},
             {shape: [this.B, this.T, this.C]}
         ]
+        this.planeIndices = generatePlaneIndices(this.C);
     }
 
     call(inputs: InputNormInputs): tf.Tensor3D {
@@ -130,7 +139,7 @@ export default class InputNorm extends GameLayer {
         // (B, 2C+2, C)
         return tf.tidy(() => {
             // Food data processing and vectorizing (n_dims)
-            const nearbyFood = calculateNearbyTarget(this.B, this.T, this.C, inputs[0], inputs[1], inputs[2]).mul(2).sub(1); // (B, C)
+            const nearbyFood = calculateNearbyTarget(this.B, this.T, this.C, inputs[0], inputs[1], inputs[2], this.planeIndices).mul(2).sub(1); // (B, C - 1)
             // Body data processing and vectorizing (5) (n_dims * 2 - 1)
             const nearbyBody = calculateNearbyBody(this.B, this.T, this.C, inputs[0], inputs[1], inputs[3], 0.95, 1000).slice([0, 0], [this.B, 1]); // (B, 1)
             // Bounds data processing and vectorizing (3) (n_dims * 2 - 1)
@@ -141,7 +150,7 @@ export default class InputNorm extends GameLayer {
     }
 
     computeOutputShape(inputShape: tf.Shape[]): tf.Shape | tf.Shape[] {
-        return [this.B, this.C + 2, 1];
+        return [this.B, this.C + 1, 1];
     }
     
     static get className() {

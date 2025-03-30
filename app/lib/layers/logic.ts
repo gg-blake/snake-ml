@@ -3,6 +3,7 @@ import { LayerArgs } from '@tensorflow/tfjs-layers/dist/engine/topology';
 import '@tensorflow/tfjs-backend-webgl';
 import GameLayer, { GameLayerConfig, IntermediateLayer } from './gamelayer';
 import { calculateNearbyTarget } from './inputnorm';
+import { generatePlaneIndices } from '../util';
 
 const calculateFitness: IntermediateLayer<[tf.Tensor1D, number, number, number, number, number], tf.Tensor1D> = (B, T, C, X, a, b, c, min, max): tf.Tensor1D => X
     .mul(a)
@@ -26,10 +27,12 @@ type LogicInputs = [
 
 export default class Logic extends GameLayer {
     maxFitness: tf.Variable<tf.Rank.R1>;
+    planeIndices: tf.Tensor2D;
 
     constructor(config: LayerArgs, gameConfig: GameLayerConfig) {
         super(config, gameConfig);
         this.maxFitness = tf.variable(tf.ones([gameConfig.B]).mul(gameConfig.TTL));
+        this.planeIndices = generatePlaneIndices(this.C);
     }
 
     call(inputs: LogicInputs): [tf.Tensor1D, tf.Tensor1D, tf.Tensor1D] {
@@ -40,7 +43,7 @@ export default class Logic extends GameLayer {
             //sensoryData.print()
             const outOfBounds = inputs[0].abs().greater(this.boundingBoxLength).any(1).logicalNot().cast('int32');
             //outOfBounds.print();
-            const targetDirection = calculateNearbyTarget(this.B, this.T, this.C, inputs[0], inputs[1], inputs[2]).slice([0, 0], [this.B, 1]).squeeze() as tf.Tensor1D;
+            const targetDirection = tf.sub(1, calculateNearbyTarget(this.B, this.T, this.C, inputs[0], inputs[1], inputs[2], this.planeIndices).abs().mul(2)).min(-1) as tf.Tensor1D; // (B,)
             
             const baseFitness = inputs[3].mul(this.TTL);
             
