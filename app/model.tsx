@@ -110,9 +110,12 @@ const TensorFlowModel: React.FC = () => {
             (model.getWeights(true) as tf.Tensor3D[]).map((weights: tf.Tensor3D) => {
                 batchWeights.push(weights.tile([settings.model.B, 1, 1]));
             })
-            model = getModel(settings.model);
+            model = getModel(settings);
             model.setWeights(batchWeights);
-            trainer.evolve(model);
+            if (settings.model.B > 1) {
+                trainer.evolve(model);
+            }
+            
             toast("Checkpoint detected. Loading from existing weights.");
         }
 
@@ -135,7 +138,10 @@ const TensorFlowModel: React.FC = () => {
                     (model.getWeights(true) as tf.Tensor3D[]).map((weights: tf.Tensor3D) => {
                         bestWeights.push(tf.keep(weights.slice([index, 0, 0], [1, weights.shape[1], weights.shape[2]])));
                     });
-                    const compactModel = getModel({...settings.model, B: 1});
+                    const compactModel = getModel({...settings, model: {
+                        ...settings.model,
+                        B: 1
+                    }});
                     compactModel.setWeights(bestWeights);
                     model.save('downloads://my-model')
                     .then(() => toast("Checkpoint saved successully to local storage"));
@@ -153,9 +159,15 @@ const TensorFlowModel: React.FC = () => {
                 killRequest.current = false;
             };
 
+            
             const start = Date.now();
-            //trainer.step(model);
-            trainer.step(model, renderer);
+            
+            if (trainer.epochCount % pendingSettings.renderer.renderEpochInterval == 0 && trainer.epochCount > 30) {
+                trainer.step(model, renderer);
+            } else {
+                trainer.step(model);
+            }
+            
             const end = Date.now();
 
             const maxFitness = trainer.state.fitness.max().arraySync() as number;
@@ -164,7 +176,10 @@ const TensorFlowModel: React.FC = () => {
             }
 
             stats.maxFitness = maxFitness;
+            stats.framesToRestart = trainer.timeToRestart.arraySync();
             stats.fps = 1 / ((end - start) / 1000);
+            stats.timeToRestart = stats.fps > 0 ? stats.framesToRestart / stats.fps : 0;
+            stats.epochCount = trainer.epochCount;
             
             requestAnimationFrame(animate);
         }
@@ -177,7 +192,7 @@ const TensorFlowModel: React.FC = () => {
             setup();
         }
         
-        modelRef.current = getModel(settings.model);
+        modelRef.current = getModel(settings);
         setIsStarted(true);
     }
 

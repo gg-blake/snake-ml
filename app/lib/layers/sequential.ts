@@ -16,7 +16,7 @@ export default class FeedForward extends GameLayer {
     }
 
     build() {
-        this.wInputHidden = this.addWeight('wInputHidden', [this.B, this.units, this.C + 1], this.dtype, tf.initializers.randomUniform({ minval: -1, maxval: 1, seed: this.seed }))
+        this.wInputHidden = this.addWeight('wInputHidden', [this.B, this.units, this.C], this.dtype, tf.initializers.randomUniform({ minval: -1, maxval: 1, seed: this.seed }))
         this.bInputHidden = this.addWeight('bInputHidden', [this.B, this.units, 1], this.dtype, tf.initializers.randomUniform({ minval: -1, maxval: 1, seed: this.seed }))
         this.wHiddenOutput = this.addWeight('wHiddenOutput', [this.B, 2 * (this.C - 1), this.units], this.dtype, tf.initializers.randomUniform({ minval: -1, maxval: 1, seed: this.seed }))
         this.bHiddenOutput = this.addWeight('bHiddenOutput', [this.B, 2 * (this.C - 1), 1], this.dtype, tf.initializers.randomUniform({ minval: -1, maxval: 1, seed: this.seed }))
@@ -27,11 +27,11 @@ export default class FeedForward extends GameLayer {
         if (!this.wHiddenOutput) throw new Error("Weights not initialized")
         
         return tf.tidy(() => {
-            const hidden = tf.tanh(tf.matMul(this.wInputHidden!.read(), inputs[0], false, false).add(this.bInputHidden!.read()));
-            const logits = tf.tanh(tf.matMul(this.wHiddenOutput!.read(), hidden, false, false).add(this.bHiddenOutput!.read()));
-            const temp = 1;
-            const probs = tf.softmax<tf.Tensor2D>(logits.squeeze([2]).div(temp) as tf.Tensor2D, 1); // (B, (((C-1)*C)/2))
-            return tf.keep(probs);
+            const hidden = tf.matMul(this.wInputHidden!.read(), inputs[0], false, false).add(this.bInputHidden!.read()).clipByValue(-1, 1);
+            const logits = tf.matMul(this.wHiddenOutput!.read(), hidden, false, false).add(this.bHiddenOutput!.read()).clipByValue(-1, 1);
+            /*const temp = 1;
+            const probs = tf.softmax<tf.Tensor2D>(logits.squeeze([2]).div(temp) as tf.Tensor2D, 1); */// (B, (((C-1)*C)/2))
+            return logits.squeeze([2]);
         });
     }
 

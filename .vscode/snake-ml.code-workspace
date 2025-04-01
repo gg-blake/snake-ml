@@ -5,6 +5,10 @@
 		}
 	],
 	"settings": {
-		"discord.enabled": true
-	}
+		"discord.enabled": true,
+		"workbench.colorTheme": "Monokai Pro",
+		"workbench.preferredDarkColorTheme": "Monochrome Dark Amplified",
+		"editor.lineNumbers": "relative"
+	},
+	
 }

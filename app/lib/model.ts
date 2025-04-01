@@ -5,14 +5,14 @@ import History from "./layers/history";
 import * as tf from '@tensorflow/tfjs';
 import '@tensorflow/tfjs-backend-webgl';
 import GameLayer, { GameLayerConfig, IntermediateLayer } from './layers/gamelayer';
-import { settings } from "../settings";
+import { Settings } from "../settings";
 import FeedForward from "./layers/sequential";
 import { LayerArgs } from "@tensorflow/tfjs-layers/dist/engine/topology";
 
-export default function getModel(config: GameLayerConfig, seed?: number): tf.LayersModel {
-    const B = config.B;
-    const T = config.T;
-    const C = config.C;
+export default function getModel(settings: Settings, seed?: number): tf.LayersModel {
+    const B = settings.model.B;
+    const T = settings.model.T;
+    const C = settings.model.C;
     const position = tf.input({ batchShape: [B, C], dtype: 'float32' });
     const direction = tf.input({ batchShape: [B, C, C], dtype: 'float32' });
     const fitness = tf.input({ batchShape: [B], dtype: 'float32' });
@@ -20,11 +20,11 @@ export default function getModel(config: GameLayerConfig, seed?: number): tf.Lay
     const targetIndex = tf.input({ batchShape: [B], dtype: "int32" });
     const inputHistory = tf.input({ batchShape: [B, T, C], dtype: 'float32' });
     const active = tf.input({ batchShape: [B], name: "active", dtype: "int32" });
-    const norm = new InputNorm({ batchInputShape: [B, T, C], dtype: 'float32' }, settings.model).apply([position, direction, target, inputHistory]) as tf.SymbolicTensor;
-    const ffwd = new FeedForward({ batchInputShape: [B, T, C], dtype: 'float32' }, settings.model, seed).apply(norm) as tf.SymbolicTensor;
-    const movement = new Movement({ batchInputShape: [B, T, C], dtype: 'float32' }, settings.model).apply([position, direction, ffwd, active]) as [tf.SymbolicTensor, tf.SymbolicTensor];
-    const logic = new Logic({ batchInputShape: [B, T, C], dtype: 'float32' }, settings.model).apply([movement[0], movement[1], target, targetIndex, fitness, active, norm]) as [tf.SymbolicTensor, tf.SymbolicTensor, tf.SymbolicTensor, tf.SymbolicTensor];
-    const outputHistory = new History({ batchInputShape: [B, T, C], dtype: 'float32' }, settings.model).apply([movement[0], logic[1], inputHistory]) as tf.SymbolicTensor;
+    const norm = new InputNorm({ batchInputShape: [B, T, C], dtype: 'float32', name: "inputnorm" }, settings.model).apply([position, direction, target, inputHistory]) as tf.SymbolicTensor;
+    const ffwd = new FeedForward({ batchInputShape: [B, T, C], dtype: 'float32', name: "sequential" }, settings.model, seed).apply(norm) as tf.SymbolicTensor;
+    const movement = new Movement({ batchInputShape: [B, T, C], dtype: 'float32', name: "movement" }, settings.model).apply([position, direction, ffwd, active]) as [tf.SymbolicTensor, tf.SymbolicTensor];
+    const logic = new Logic({ batchInputShape: [B, T, C], dtype: 'float32', name: "logic" }, settings.model).apply([movement[0], movement[1], target, targetIndex, fitness, active, norm]) as [tf.SymbolicTensor, tf.SymbolicTensor, tf.SymbolicTensor, tf.SymbolicTensor];
+    const outputHistory = new History({ batchInputShape: [B, T, C], dtype: 'float32', name: "history" }, settings.model).apply([movement[0], logic[1], inputHistory]) as tf.SymbolicTensor;
 
     const model = tf.model({
         inputs: [position, direction, fitness, target, targetIndex, inputHistory, active],

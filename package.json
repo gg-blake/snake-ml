@@ -35,6 +35,7 @@
   "devDependencies": {
     "@tweakpane/core": "^2.0.5",
     "eslint": "^9.21.0",
+    "prettier": "3.5.3",
     "typescript": "^5.8.2"
   }
 }

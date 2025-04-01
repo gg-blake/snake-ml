@@ -1,10 +1,12 @@
 import * as tf from '@tensorflow/tfjs';
 import { NamedTensor } from '@tensorflow/tfjs-core/dist/tensor_types';
 import GameLayer, { GameLayerConfig } from './layers/gamelayer';
-import { settings } from '../settings';
 import { Data, DataValues } from './model';
 import getModel from './model';
 import { NEATRenderer, Renderer } from './renderer';
+import { generatePlaneIndices } from './util';
+import InputNorm from './layers/inputnorm';
+import Logic from './layers/logic';
 
 interface NEATVariableGradients extends tf.NamedTensorMap {
     weights: tf.Tensor;
@@ -46,6 +48,9 @@ export default class NEAT implements NEATI {
     fitnessDelta: tf.Variable<tf.Rank.R1>;
     target: tf.Variable<tf.Rank.R2>; // Stores the fixed number of generated targets for population to be tested on
     state: Data<tf.Variable>; // Tracks the current stats of the performing population
+    planeIndices: tf.Tensor2D;
+    timeToRestart: tf.Variable<tf.Rank.R0>;
+    batchMaxFitness: tf.Variable<tf.Rank.R0>;
 
     constructor(gameConfig: GameLayerConfig, gameOptimizerConfig: NEATConfig) {
         this.epochCount = 0;
@@ -63,24 +68,33 @@ export default class NEAT implements NEATI {
             history: tf.variable(tf.zeros([this.config.B, this.config.T, this.config.C], 'float32')),
             active: tf.variable(tf.ones([this.config.B], 'int32'))
         }
+        this.planeIndices = generatePlaneIndices(this.config.C);
+        this.timeToRestart = tf.variable(tf.tensor(this.config.TTL));
+        this.batchMaxFitness = tf.variable(tf.tensor(this.config.TTL));
     }
 
     step(model: tf.LayersModel, renderer?: NEATRenderer): void {
         tf.tidy(() => {
-            if (this.state.active.equal(0).all().arraySync() == 1) {
+            if (this.timeToRestart.arraySync() < 0) {
                 if (this.state.target.greater(0).any().arraySync() == 1) {
                     this.target.assign(tf.concat([tf.randomUniform([1, this.config.C]), this.target.slice([1, 0], [this.config.T - 1, this.config.C])], 0));
                 }
 
-                this.evolve(model);
+                if (this.config.B > 1) {
+                    this.evolve(model);
+                }
+                
                 this.resetState();
                 this.stepCount = 0;
                 this.epochCount++;
+                this.timeToRestart.assign(tf.tensor(this.config.TTL));
+                this.batchMaxFitness.assign(tf.tensor(this.config.TTL));
                 
                 return;
             }
 
             const prevState = this.state.fitness.clone();
+            const prevBatchMaxFitness = this.state.fitness.max(-1);
             this.setState = model.predictOnBatch([
                 this.state.position,
                 this.state.direction,
@@ -91,7 +105,12 @@ export default class NEAT implements NEATI {
                 this.state.active
             ]) as DataValues<tf.Tensor>;
             this.fitnessDelta.assign(this.state.fitness.sub(prevState));
+            this.batchMaxFitness.assign(tf.max(tf.stack([this.state.fitness.mul(this.state.active).max(-1), this.batchMaxFitness])))
+            const nextBatchMaxFitness = this.state.fitness.max(-1);
+            const batchMaxFitnessDelta = this.state.fitness.mul(this.state.active).max(-1).sub(this.batchMaxFitness);
             this.stepCount++;
+
+            this.timeToRestart.assign(this.timeToRestart.add(batchMaxFitnessDelta.clipByValue(-1, 0)) as tf.Scalar);
         })
 
         if (renderer == null) {
@@ -147,21 +166,5 @@ export default class NEAT implements NEATI {
 
             model.setWeights(newWeights);
         })
-    }
-}
-
-function main() {
-    const optimizerConfig = {
-        mutationRate: 1/settings.model.B,
-        mutationFactor: 0.01
-    }
-    
-    const optimizer = new NEAT(settings.model, optimizerConfig);
-    const model = getModel(settings.model);
-    for (let i = 0; i < 50; i++) {
-        console.time("step");
-        optimizer.step(model);
-        console.timeEnd("step");
-        console.log(tf.memory().numTensors)
     }
 }

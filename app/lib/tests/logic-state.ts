@@ -1,34 +1,33 @@
 import * as tf from '@tensorflow/tfjs';
-import { settings } from '@/app/settings';
+import { Settings, settings } from '@/app/settings';
 import InputNorm from '../layers/inputnorm';
+import getModel from '../model';
+import NEAT from '../optimizer';
+import Logic from '../layers/logic';
 
 const B = 5;
 const C = 3;
 const T = 10;
 
-function getModel() {
-    const position = tf.input({ batchShape: [B, C], dtype: 'float32' });
-    const direction = tf.input({ batchShape: [B, C, C], dtype: 'float32' });
-    const target = tf.input({ batchShape: [B, C], dtype: 'float32' });
-    const inputHistory = tf.input({ batchShape: [B, T, C], dtype: 'float32' });
-    const norm = new InputNorm({ batchInputShape: [B, T, C], dtype: 'float32', name: "inputnorm" }, settings.model).apply([position, direction, target, inputHistory]) as tf.SymbolicTensor;
-
-    return tf.model({
-        inputs: [position, direction, target, inputHistory],
-        outputs: [norm]
-    })
-}
+settings.trainer.mutationRate = 1/settings.model.B;
 
 function main() {
-    const model = getModel();
 
-    const position = tf.randomUniform([B, C], -10, 10);
-    const direction = tf.eye(C).expandDims(0).tile([B, 1, 1]);
-    const target = tf.randomUniformInt([B, C], -10, 10).cast('float32');
-    const history = tf.randomUniform([B, T, C]);
+    const model = getModel(settings, 123);
 
-    const out = model.predictOnBatch([position, direction, target, history]) as tf.Tensor;
-    out.print();
+    const trainer = new NEAT(settings.model, settings.trainer);
+    trainer.resetState();
+    trainer.target.print(true);
+
+    for (let i = 0; i < 100; i++) {
+        
+        trainer.step(model);
+    }
+    
+    
+    const logic = model.getLayer("logic") as Logic;
+
+    //logic.state.fitnessDelta.print(true);
 }
 
 /*

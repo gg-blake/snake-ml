@@ -5,7 +5,7 @@ import NEAT from './optimizer';
 import { calculateNearbyBounds } from './layers/inputnorm';
 import { arraySync, Data } from './model';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { clamp } from './util';
+import { clamp, generatePlaneIndices } from './util';
 
 const projectDirectionToBounds = (B: number, T: number, C: number, position: tf.Tensor2D, direction: tf.Tensor3D, scale: number): tf.Tensor2D => tf.tidy(() => {
     const distance = calculateNearbyBounds(B, T, C, position, direction, scale).expandDims(-1).tile([1, C]) as tf.Tensor2D;
@@ -297,12 +297,29 @@ export class NEATRenderer extends Renderer {
             throw new Error("Must initialize orbit controls first with renderInit()");
         }
 
-        this.updateParams(arraySync(model.state));
+        const params = arraySync(model.state)
+        this.updateParams(params);
 
         if (settings.renderer.showProjections) {
             this.renderProjections(model);
         } else if (this.group.hasOwnProperty('projections')) {
             this.removeGroup('projections');
+        }
+
+        
+
+        if (model.config.C > 3) {
+            const position = params.position;
+            const length = model.config.boundingBoxLength;
+            Object.values(this.uuids).map((uuid: string[], index: number) => {
+                const mesh = this.scene.getObjectByProperty('uuid', uuid[0]) as THREE.Mesh;
+                (mesh.material as THREE.MeshStandardMaterial).color.lerpHSL(new THREE.Color((position[index][3] + length) / (length * 2), 1, 1), 0.5);
+            })
+        } else {
+            Object.values(this.uuids).map((uuid: string[], index: number) => {
+                const mesh = this.scene.getObjectByProperty('uuid', uuid[0]) as THREE.Mesh;
+                (mesh.material as THREE.MeshStandardMaterial).color.lerp(Renderer.primaryMaterial.color, 0.5);
+            })
         }
 
         if (settings.renderer.showFitnessDelta) {
@@ -316,11 +333,6 @@ export class NEATRenderer extends Renderer {
                 (mesh.material as THREE.MeshStandardMaterial).color.setRGB(clamp(1 - (delta - min) / dt, 0, 1), clamp((delta - min) / dt, 0, 1), 0)
             })
             //console.log(colors)
-        } else {
-            Object.values(this.uuids).map((uuid: string[], index: number) => {
-                const mesh = this.scene.getObjectByProperty('uuid', uuid[0]) as THREE.Mesh;
-                (mesh.material as THREE.MeshStandardMaterial).color.lerp(Renderer.primaryMaterial.color, 0.5);
-            })
         }
 
         if (settings.renderer.showTargetRays) {

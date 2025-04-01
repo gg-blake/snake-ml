@@ -4,6 +4,7 @@ import { NEATRenderer } from "./lib/renderer";
 import * as THREE from 'three';
 import GameLayer, { GameLayerConfig } from "./lib/layers/gamelayer";
 import { NEATConfig } from "./lib/optimizer";
+import { model } from "@tensorflow/tfjs";
 
 export interface RendererConfig {
     showProjections: boolean;
@@ -11,6 +12,8 @@ export interface RendererConfig {
     showNormals: boolean;
     showTargetRays: boolean;
     showBest: boolean;
+    showTargetProjections: boolean;
+    renderEpochInterval: number;
 }
 
 // TODO: Move this interface to a dedicated file
@@ -31,7 +34,9 @@ var settings: Settings = {
         showFitnessDelta: false,
         showNormals: false,
         showTargetRays: false,
-        showBest: false
+        showBest: false,
+        showTargetProjections: false,
+        renderEpochInterval: 1
     },
     model: {
         TTL: 200,
@@ -50,7 +55,7 @@ var settings: Settings = {
         }
     },
     trainer: {
-        mutationFactor: 0.1,
+        mutationFactor: 0.01,
         mutationRate: 0
     }
 }
@@ -60,17 +65,23 @@ var pendingSettings = settings;
 export interface Stats {
     maxFitness: number;
     maxFitnessGlobal: number;
+    framesToRestart: number;
+    timeToRestart: number;
     fps: number;
+    epochCount: number;
 }
 
 export var stats: Stats = {
     maxFitness: settings.model.TTL,
     maxFitnessGlobal: settings.model.TTL,
-    fps: 0
+    framesToRestart: settings.model.TTL,
+    timeToRestart: 0,
+    fps: 0,
+    epochCount: 0
 }
 
 
-settings.trainer.mutationRate = 5/settings.model.B;
+settings.trainer.mutationRate = 0.5;
 pendingSettings.trainer.mutationRate = settings.trainer.mutationRate
 export {settings, pendingSettings};
 
@@ -136,13 +147,14 @@ export function SettingsPane({ killRequest, endRequest }: { killRequest: React.M
         tab.pages[1].addBinding(pendingSettings.renderer, 'showNormals', { label: 'Show Velocity Vectors' });
         tab.pages[1].addBinding(pendingSettings.renderer, 'showTargetRays', { label: 'Show Target Rays' });
         tab.pages[1].addBinding(pendingSettings.renderer, 'showBest', { label: 'Show Best Performers' });
+        tab.pages[1].addBinding(pendingSettings.renderer, 'showTargetProjections', { label: 'Show Target Projections' });
 
         
         pane.addBinding(stats, 'maxFitness', {
             readonly: true,
             view: 'graph',
-            min: pendingSettings.model.TTL,
-            max: 1000,
+            min: 0,
+            max: 3000,
             label: "Max Fitness"
         });
 
@@ -156,9 +168,27 @@ export function SettingsPane({ killRequest, endRequest }: { killRequest: React.M
             label: "Max Fitness All-time"
         });
 
+        pane.addBinding(stats, 'framesToRestart', {
+            readonly: true,
+            view: 'graph',
+            min: 0,
+            max: settings.model.TTL,
+            label: "Number of Frames Until Next Generation"
+        });
+
+        pane.addBinding(stats, 'framesToRestart', {
+            readonly: true,
+            label: "Estimated Seconds Until Next Generation"
+        });
+
         pane.addBinding(stats, 'fps', {
             readonly: true,
             lable: "FPS"
+        });
+
+        pane.addBinding(stats, 'epochCount', {
+            readonly: true,
+            lable: "Current Epoch"
         });
 
         return () => {
