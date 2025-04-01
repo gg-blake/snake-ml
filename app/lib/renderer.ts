@@ -5,11 +5,10 @@ import NEAT from './optimizer';
 import { calculateNearbyBounds } from './layers/inputnorm';
 import { arraySync, Data } from './model';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { clamp, generatePlaneIndices } from './util';
 
-const projectDirectionToBounds = (position: tf.Tensor2D, direction: tf.Tensor3D, scale: number): tf.Tensor2D => tf.tidy(() => {
-    const B = position.shape[0];
-    const C = position.shape[1];
-    const distance = calculateNearbyBounds(position, direction, scale).expandDims(-1).tile([1, C]) as tf.Tensor2D;
+const projectDirectionToBounds = (B: number, T: number, C: number, position: tf.Tensor2D, direction: tf.Tensor3D, scale: number): tf.Tensor2D => tf.tidy(() => {
+    const distance = calculateNearbyBounds(B, T, C, position, direction, scale).expandDims(-1).tile([1, C]) as tf.Tensor2D;
     
     const forwardVectors = direction.slice([0, 0, 0], [B, 1, C]).squeeze([1]) as tf.Tensor2D;
     const proj = tf.add(position, tf.mul(forwardVectors, distance)) as tf.Tensor2D;
@@ -298,7 +297,8 @@ export class NEATRenderer extends Renderer {
             throw new Error("Must initialize orbit controls first with renderInit()");
         }
 
-        this.updateParams(arraySync(model.state));
+        const params = arraySync(model.state)
+        this.updateParams(params);
 
         if (settings.renderer.showProjections) {
             this.renderProjections(model);
@@ -306,22 +306,33 @@ export class NEATRenderer extends Renderer {
             this.removeGroup('projections');
         }
 
-        if (settings.renderer.showFitnessDelta) {
-            const fitnessDelta = model.fitnessDelta.arraySync() as number[];
-            const max = model.fitnessDelta.max().arraySync() as number;
-            const min = model.fitnessDelta.min().arraySync() as number;
-            const dt = max - min;
-            const colors = fitnessDelta.map((delta: number) => new THREE.Color(1 - (delta - min) / dt, (delta - min) / dt, 0))
+        
+
+        if (model.config.C > 3) {
+            const position = params.position;
+            const length = model.config.boundingBoxLength;
             Object.values(this.uuids).map((uuid: string[], index: number) => {
                 const mesh = this.scene.getObjectByProperty('uuid', uuid[0]) as THREE.Mesh;
-                (mesh.material as THREE.MeshStandardMaterial).color.lerp(colors[index], 0.5);
+                (mesh.material as THREE.MeshStandardMaterial).color.lerpHSL(new THREE.Color((position[index][3] + length) / (length * 2), 1, 1), 0.5);
             })
-            //console.log(colors)
         } else {
             Object.values(this.uuids).map((uuid: string[], index: number) => {
                 const mesh = this.scene.getObjectByProperty('uuid', uuid[0]) as THREE.Mesh;
                 (mesh.material as THREE.MeshStandardMaterial).color.lerp(Renderer.primaryMaterial.color, 0.5);
             })
+        }
+
+        if (settings.renderer.showFitnessDelta) {
+            const fitnessDelta = model.fitnessDelta.arraySync() as number[];
+            const max = model.fitnessDelta.max().arraySync() as number;
+            const min = model.fitnessDelta.min().arraySync() as number;
+            const dt = max - min;
+            Object.values(this.uuids).map((uuid: string[], index: number) => {
+                const mesh = this.scene.getObjectByProperty('uuid', uuid[0]) as THREE.Mesh;
+                const delta = fitnessDelta[index];
+                (mesh.material as THREE.MeshStandardMaterial).color.setRGB(clamp(1 - (delta - min) / dt, 0, 1), clamp((delta - min) / dt, 0, 1), 0)
+            })
+            //console.log(colors)
         }
 
         if (settings.renderer.showTargetRays) {
@@ -345,16 +356,16 @@ export class NEATRenderer extends Renderer {
         Object.values(this.uuids).map((uuid: string[], index: number) => {
             if (!alive[index]) {
                 const mesh = this.scene.getObjectByProperty('uuid', uuid[0]) as THREE.Mesh;
-                (mesh.material as THREE.MeshStandardMaterial).color.lerp(Renderer.secondaryMaterial.color, 0.5);
+                (mesh.material as THREE.MeshStandardMaterial).color.setRGB(0, 0, 0);
             }
         })
 
         if (settings.renderer.showBest) {
-            (model.state.target.greaterEqual(model.state.target.max()).cast('int32').arraySync() as number[])
+            (model.state.fitness.greaterEqual(model.state.fitness.mul(model.state.active.cast('float32')).max()).cast('int32').arraySync() as number[])
             .map((value: number, index: number) => {
                 if (value == 0) {
                     const mesh = this.scene.getObjectByProperty('uuid', this.uuids[index][0]) as THREE.Mesh;
-                    (mesh.material as THREE.MeshStandardMaterial).color.lerp(Renderer.secondaryMaterial.clone().color, 0.5);
+                    (mesh.material as THREE.MeshStandardMaterial).color.setRGB(0, 0, 0);
                 }
             });
         }
@@ -374,7 +385,7 @@ export class NEATRenderer extends Renderer {
 
     renderProjections(model: NEAT) {
         tf.tidy(() => {
-            const proj = projectDirectionToBounds(model.state.position, model.state.direction, model.config.boundingBoxLength);
+            const proj = projectDirectionToBounds(model.config.B, model.config.T, model.config.C, model.state.position, model.state.direction, model.config.boundingBoxLength);
             const projectionPositions = (proj.arraySync() as number[][]);
             if (!this.group.hasOwnProperty('projections')) {
                 this.addBoxGroup('projections', projectionPositions, Renderer.debugMaterial);
@@ -408,10 +419,11 @@ export class NEATRenderer extends Renderer {
             this.updateLineGroupPosition('target_rays', targetPositions, position);
 
             if (settings.renderer.showBest) {
-                this.updateLineGroupMaterial('target_rays', (model.state.target.greaterEqual(model.state.target.max()).cast('int32').arraySync() as number[]).map((value: number) => value == 1 ? Renderer.primaryDebugLineMaterial : Renderer.secondaryDebugLineMaterial));
+                this.updateLineGroupMaterial('target_rays', (model.state.fitness.greaterEqual(model.state.fitness.mul(model.state.active.cast("float32")).max()).cast('int32').arraySync() as number[]).map((value: number) => value == 1 ? Renderer.primaryDebugLineMaterial : Renderer.secondaryDebugLineMaterial));
                 return;
             }
-            this.updateLineGroupMaterial('target_rays', Array.from(Array(settings.model.B).keys(), () => Renderer.primaryDebugLineMaterial));
+
+            this.updateLineGroupMaterial('target_rays', (model.state.active.arraySync() as number[]).map((value: number) => value == 1 ? Renderer.primaryDebugLineMaterial : Renderer.secondaryDebugLineMaterial));
         })
     }
 }

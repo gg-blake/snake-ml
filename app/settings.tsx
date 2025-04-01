@@ -4,6 +4,7 @@ import { NEATRenderer } from "./lib/renderer";
 import * as THREE from 'three';
 import GameLayer, { GameLayerConfig } from "./lib/layers/gamelayer";
 import { NEATConfig } from "./lib/optimizer";
+import { model } from "@tensorflow/tfjs";
 
 export interface RendererConfig {
     showProjections: boolean;
@@ -11,6 +12,8 @@ export interface RendererConfig {
     showNormals: boolean;
     showTargetRays: boolean;
     showBest: boolean;
+    showTargetProjections: boolean;
+    renderEpochInterval: number;
 }
 
 // TODO: Move this interface to a dedicated file
@@ -31,7 +34,9 @@ var settings: Settings = {
         showFitnessDelta: false,
         showNormals: false,
         showTargetRays: false,
-        showBest: false
+        showBest: false,
+        showTargetProjections: false,
+        renderEpochInterval: 1
     },
     model: {
         TTL: 200,
@@ -40,7 +45,7 @@ var settings: Settings = {
         C: 3,
         startingLength: 5,
         boundingBoxLength: 30,
-        units: 40,
+        units: 100,
         fitnessGraphParams: {
             a: 10,
             b: 1.5,
@@ -50,34 +55,45 @@ var settings: Settings = {
         }
     },
     trainer: {
-        mutationFactor: 0.05,
+        mutationFactor: 0.01,
         mutationRate: 0
     }
 }
 
+var pendingSettings = settings;
+
 export interface Stats {
     maxFitness: number;
+    maxFitnessGlobal: number;
+    framesToRestart: number;
+    timeToRestart: number;
     fps: number;
+    epochCount: number;
 }
 
 export var stats: Stats = {
     maxFitness: settings.model.TTL,
-    fps: 0
+    maxFitnessGlobal: settings.model.TTL,
+    framesToRestart: settings.model.TTL,
+    timeToRestart: 0,
+    fps: 0,
+    epochCount: 0
 }
 
 
-settings.trainer.mutationRate = (1 / settings.model.B) * 50;
-export {settings};
+settings.trainer.mutationRate = 0.5;
+pendingSettings.trainer.mutationRate = settings.trainer.mutationRate
+export {settings, pendingSettings};
 
 function addTrainingParameterBinding(pane: Pane | TabPageApi | FolderApi, key: keyof Settings["trainer"], params: BindingParams, killRequest: React.MutableRefObject<boolean>) {
-    pane.addBinding(settings.trainer, key, params)
+    pane.addBinding(pendingSettings.trainer, key, params)
     .on('change', () => {
         killRequest.current! = true;
     })
 }
 
 function addModelParameterBinding(pane: Pane | TabPageApi | FolderApi, key: keyof Settings["model"], params: BindingParams, endRequest: React.MutableRefObject<boolean>) {
-    pane.addBinding(settings.model, key, params)
+    pane.addBinding(pendingSettings.model, key, params)
     .on('change', () => {
         endRequest.current! = true;
     })
@@ -120,24 +136,25 @@ export function SettingsPane({ killRequest, endRequest }: { killRequest: React.M
             'title': 'Fitness Graph'
         })
 
-        fitnessGraphParamsFolder.addBinding(settings.model.fitnessGraphParams, 'a', { step: 0.0001, min: -50, max: 50 });
-        fitnessGraphParamsFolder.addBinding(settings.model.fitnessGraphParams, 'b', { step: 0.0001, min: -50, max: 50 });
-        fitnessGraphParamsFolder.addBinding(settings.model.fitnessGraphParams, 'c', { step: 0.0001, min: -50, max: 50 });
-        fitnessGraphParamsFolder.addBinding(settings.model.fitnessGraphParams, 'min');
-        fitnessGraphParamsFolder.addBinding(settings.model.fitnessGraphParams, 'max');
+        fitnessGraphParamsFolder.addBinding(pendingSettings.model.fitnessGraphParams, 'a', { step: 0.0001, min: -50, max: 50 });
+        fitnessGraphParamsFolder.addBinding(pendingSettings.model.fitnessGraphParams, 'b', { step: 0.0001, min: -50, max: 50 });
+        fitnessGraphParamsFolder.addBinding(pendingSettings.model.fitnessGraphParams, 'c', { step: 0.0001, min: -50, max: 50 });
+        fitnessGraphParamsFolder.addBinding(pendingSettings.model.fitnessGraphParams, 'min');
+        fitnessGraphParamsFolder.addBinding(pendingSettings.model.fitnessGraphParams, 'max');
 
-        tab.pages[1].addBinding(settings.renderer, 'showProjections', { label: 'Show Snake Projections'});
-        tab.pages[1].addBinding(settings.renderer, 'showFitnessDelta', { label: 'Show Fitness Delta' });
-        tab.pages[1].addBinding(settings.renderer, 'showNormals', { label: 'Show Velocity Vectors' });
-        tab.pages[1].addBinding(settings.renderer, 'showTargetRays', { label: 'Show Target Rays' });
-        tab.pages[1].addBinding(settings.renderer, 'showBest', { label: 'Show Best Performers' });
+        tab.pages[1].addBinding(pendingSettings.renderer, 'showProjections', { label: 'Show Snake Projections'});
+        tab.pages[1].addBinding(pendingSettings.renderer, 'showFitnessDelta', { label: 'Show Fitness Delta' });
+        tab.pages[1].addBinding(pendingSettings.renderer, 'showNormals', { label: 'Show Velocity Vectors' });
+        tab.pages[1].addBinding(pendingSettings.renderer, 'showTargetRays', { label: 'Show Target Rays' });
+        tab.pages[1].addBinding(pendingSettings.renderer, 'showBest', { label: 'Show Best Performers' });
+        tab.pages[1].addBinding(pendingSettings.renderer, 'showTargetProjections', { label: 'Show Target Projections' });
 
         
         pane.addBinding(stats, 'maxFitness', {
             readonly: true,
             view: 'graph',
-            min: settings.model.TTL,
-            max: 1000,
+            min: 0,
+            max: 3000,
             label: "Max Fitness"
         });
 
@@ -146,9 +163,32 @@ export function SettingsPane({ killRequest, endRequest }: { killRequest: React.M
             label: "Max Fitness"
         });
 
+        pane.addBinding(stats, 'maxFitnessGlobal', {
+            readonly: true,
+            label: "Max Fitness All-time"
+        });
+
+        pane.addBinding(stats, 'framesToRestart', {
+            readonly: true,
+            view: 'graph',
+            min: 0,
+            max: settings.model.TTL,
+            label: "Number of Frames Until Next Generation"
+        });
+
+        pane.addBinding(stats, 'framesToRestart', {
+            readonly: true,
+            label: "Estimated Seconds Until Next Generation"
+        });
+
         pane.addBinding(stats, 'fps', {
             readonly: true,
             lable: "FPS"
+        });
+
+        pane.addBinding(stats, 'epochCount', {
+            readonly: true,
+            lable: "Current Epoch"
         });
 
         return () => {
