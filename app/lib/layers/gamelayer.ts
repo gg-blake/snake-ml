@@ -10,64 +10,43 @@ export interface FitnessGraphParams extends tf.serialization.ConfigDict {
     max: number;
 }
 
-export interface GameLayerConfig extends tf.serialization.ConfigDict {
-    B: number;
-    T: number;
-    C: number;
-    TTL: number;
+export interface Config extends tf.serialization.ConfigDict {
+    ttl: number;
     startingLength: number;
     boundingBoxLength: number;
     units: number;
     fitnessGraphParams: FitnessGraphParams;
 }
 
-export type IntermediateLayerInputSignal = Array<tf.Tensor<any> | tf.TensorLike>;
-export type IntermediateLayerOutputSignal = IntermediateLayerInputSignal | tf.Tensor<any> | tf.TensorLike;
-export type IntermediateLayer<I extends IntermediateLayerInputSignal, O extends IntermediateLayerOutputSignal> = (B: number, T: number, C: number, ...args: I) => O;
+export type TensorOrArray<T, R extends tf.Rank, G> = T extends (tf.Variable | tf.Tensor) ? (T extends tf.Variable ? tf.Variable<R> : tf.Tensor<R>) : T extends number ? G : never;
+export type Position<T extends tf.Tensor | tf.Variable | number> = TensorOrArray<T, tf.Rank.R2, number[][]>;
+export type Direction<T extends tf.Tensor | tf.Variable | number> = TensorOrArray<T, tf.Rank.R3, number[][][]>;
+export type History<T extends tf.Tensor | tf.Variable | number> = TensorOrArray<T, tf.Rank.R3, number[][][]>;
+export type Active<T extends tf.Tensor | tf.Variable | number> = TensorOrArray<T, tf.Rank.R1, number[][]>;
+export type Fitness<T extends tf.Tensor | tf.Variable | number> = TensorOrArray<T, tf.Rank.R1, number[][]>;
+export type TargetPosition<T extends tf.Tensor | tf.Variable | number> = TensorOrArray<T, tf.Rank.R2, number[][]>;
+export type TargetIndices<T extends tf.Tensor | tf.Variable | number> = TensorOrArray<T, tf.Rank.R1, number[]>;
 
-export default class GameLayer extends tf.layers.Layer {
-    B: number;
-    T: number;
-    C: number;
-    TTL: number;
-    startingLength: number;
-    boundingBoxLength: number;
-    units: number;
-    fitnessGraphParams: FitnessGraphParams;
 
-    constructor(config: LayerArgs, gameConfig: GameLayerConfig) {
-        super(config);
-        if (!gameConfig) {
-            throw new Error("Game config not provided");
-        }
+export default abstract class GameLayer extends tf.layers.Layer {
+    config: LayerArgs & Config;
+
+    constructor(config: LayerArgs & Config, name?: string) {
+        super({
+            ...config,
+            name: name
+        });
+        
         if (!config.batchInputShape) {
             throw new Error("GameLayer input shape is not specified");
         }
 
-        this.TTL = gameConfig.TTL;
-        this.startingLength = gameConfig.startingLength;
-        this.boundingBoxLength = gameConfig.boundingBoxLength;
-        this.units = gameConfig.units;
-        this.fitnessGraphParams = gameConfig.fitnessGraphParams;
-        this.B = config.batchInputShape[0]!;
-        this.T = config.batchInputShape[1]!;
-        this.C = config.batchInputShape[2]!;
+        this.config = config;
         
     }
 
-    getConfig(): LayerArgs & GameLayerConfig {
-        const config = super.getConfig() as LayerArgs & GameLayerConfig;
-        Object.assign(config, {
-            B: this.B,
-            T: this.T,
-            C: this.C,
-            TTL: this.TTL,
-            startingLength: this.startingLength,
-            boundingBoxLength: this.boundingBoxLength,
-            units: this.units,
-            fitnessGraphParams: this.fitnessGraphParams
-        });
-        return config;
+    getConfig(): LayerArgs & Config {
+        return this.config;
     }
 }
 

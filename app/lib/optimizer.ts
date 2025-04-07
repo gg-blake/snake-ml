@@ -1,12 +1,12 @@
 import * as tf from '@tensorflow/tfjs';
 import { NamedTensor } from '@tensorflow/tfjs-core/dist/tensor_types';
-import GameLayer, { GameLayerConfig } from './layers/gamelayer';
+import GameLayer, * as GL from './layers/gamelayer';
 import { Data, DataValues } from './model';
-import getModel from './model';
 import { NEATRenderer, Renderer } from './renderer';
 import { generatePlaneIndices } from './util';
 import InputNorm from './layers/inputnorm';
 import Logic from './layers/logic';
+import { Settings } from '../settings';
 
 interface NEATVariableGradients extends tf.NamedTensorMap {
     weights: tf.Tensor;
@@ -19,8 +19,8 @@ export interface NEATConfig extends tf.serialization.ConfigDict {
 
 export interface Trainer {
     stepCount: number;
-    config: GameLayerConfig;
-    target: tf.Variable<tf.Rank.R2>; // Stores the fixed number of generated targets for population to be tested on
+    config: Settings;
+    target: GL.TargetPosition<tf.Variable<tf.Rank.R2>>; // Stores the fixed number of generated targets for population to be tested on
     state: Data<tf.Variable>; // Tracks the current stats of the performing population
 
     step(model: tf.LayersModel | tf.LayersModel[]): void;
@@ -31,9 +31,6 @@ export interface Trainer {
 }
 
 export interface NEATI extends Trainer {
-    mutationRate: number; // How frequent a mutation occurs in the population's gene pool
-    mutationFactor: number; // How much each mutation affect the existing weights
-
     set setState(values: DataValues<tf.Tensor>);
 
     evolve(model: tf.LayersModel): void;
@@ -42,9 +39,7 @@ export interface NEATI extends Trainer {
 export default class NEAT implements NEATI {
     epochCount: number;
     stepCount: number;
-    config: GameLayerConfig;
-    mutationRate: number; // How frequent a mutation occurs in the population's gene pool
-    mutationFactor: number; // How much each mutation affect the existing weights
+    config: Settings;
     fitnessDelta: tf.Variable<tf.Rank.R1>;
     target: tf.Variable<tf.Rank.R2>; // Stores the fixed number of generated targets for population to be tested on
     state: Data<tf.Variable>; // Tracks the current stats of the performing population
@@ -52,43 +47,45 @@ export default class NEAT implements NEATI {
     timeToRestart: tf.Variable<tf.Rank.R0>;
     batchMaxFitness: tf.Variable<tf.Rank.R0>;
 
-    constructor(gameConfig: GameLayerConfig, gameOptimizerConfig: NEATConfig) {
+    constructor(config: Settings) {
+        const [ B, T, C ] = config.model.batchInputShape! as number[];
+        const { ttl, boundingBoxLength } = config.model;
         this.epochCount = 0;
         this.stepCount = 0;
-        this.config = gameConfig;
-        this.mutationRate = gameOptimizerConfig.mutationRate;
-        this.mutationFactor = gameOptimizerConfig.mutationFactor;
-        this.fitnessDelta = tf.variable(tf.zeros([gameConfig.B]));
-        this.target = tf.variable(tf.randomUniform([this.config.T, this.config.C], -this.config.boundingBoxLength, this.config.boundingBoxLength, 'float32'))
+        this.config = config;
+        this.fitnessDelta = tf.variable(tf.zeros([B]));
+        this.target = tf.variable(tf.randomUniform([T, C], -boundingBoxLength, boundingBoxLength, 'float32'))
         this.state = {
-            position: tf.variable(tf.zeros([this.config.B, this.config.C], 'float32')),
-            direction: tf.variable(tf.eye(this.config.C, ...[, ,], 'float32').expandDims(0).tile([this.config.B, 1, 1])),
-            fitness: tf.variable(tf.ones([this.config.B], 'float32').mul(this.config.TTL)),
-            target: tf.variable(tf.zeros([this.config.B], 'int32')),
-            history: tf.variable(tf.zeros([this.config.B, this.config.T, this.config.C], 'float32')),
-            active: tf.variable(tf.ones([this.config.B], 'int32'))
+            position: tf.variable(tf.zeros([B, C], 'float32')),
+            direction: tf.variable(tf.eye(C, ...[, ,], 'float32').expandDims(0).tile([B, 1, 1])),
+            fitness: tf.variable(tf.ones([B], 'float32').mul(ttl)),
+            target: tf.variable(tf.zeros([B], 'int32')),
+            history: tf.variable(tf.zeros([B, T, C], 'float32')),
+            active: tf.variable(tf.ones([B], 'int32'))
         }
-        this.planeIndices = generatePlaneIndices(this.config.C);
-        this.timeToRestart = tf.variable(tf.tensor(this.config.TTL));
-        this.batchMaxFitness = tf.variable(tf.tensor(this.config.TTL));
+        this.planeIndices = generatePlaneIndices(C);
+        this.timeToRestart = tf.variable(tf.tensor(ttl));
+        this.batchMaxFitness = tf.variable(tf.tensor(ttl));
     }
 
     step(model: tf.LayersModel, renderer?: NEATRenderer): void {
+        const [ B, T, C ] = this.config.model.batchInputShape! as number[];
+        const { ttl } = this.config.model;
         tf.tidy(() => {
             if (this.timeToRestart.arraySync() < 0) {
                 if (this.state.target.greater(0).any().arraySync() == 1) {
-                    this.target.assign(tf.concat([tf.randomUniform([1, this.config.C]), this.target.slice([1, 0], [this.config.T - 1, this.config.C])], 0));
+                    this.target.assign(tf.concat([tf.randomUniform([1, C]), this.target.slice([1, 0], [T - 1, C])], 0));
                 }
 
-                if (this.config.B > 1) {
+                if (B > 1) {
                     this.evolve(model);
                 }
                 
                 this.resetState();
                 this.stepCount = 0;
                 this.epochCount++;
-                this.timeToRestart.assign(tf.tensor(this.config.TTL));
-                this.batchMaxFitness.assign(tf.tensor(this.config.TTL));
+                this.timeToRestart.assign(tf.tensor(ttl));
+                this.batchMaxFitness.assign(tf.tensor(ttl));
                 
                 return;
             }
@@ -104,13 +101,14 @@ export default class NEAT implements NEATI {
                 this.state.history,
                 this.state.active
             ]) as DataValues<tf.Tensor>;
+            
             this.fitnessDelta.assign(this.state.fitness.sub(prevState));
             this.batchMaxFitness.assign(tf.max(tf.stack([this.state.fitness.mul(this.state.active).max(-1), this.batchMaxFitness])))
             const nextBatchMaxFitness = this.state.fitness.max(-1);
             const batchMaxFitnessDelta = this.state.fitness.mul(this.state.active).max(-1).sub(this.batchMaxFitness);
             this.stepCount++;
 
-            this.timeToRestart.assign(this.timeToRestart.add(batchMaxFitnessDelta.clipByValue(-1, 0)) as tf.Scalar);
+            this.timeToRestart.assign(this.timeToRestart.add(batchMaxFitnessDelta.clipByValue(-1, 0).sub(0.1)) as tf.Scalar);
         })
 
         if (renderer == null) {
@@ -121,14 +119,16 @@ export default class NEAT implements NEATI {
     }
 
     resetState() {
-        this.fitnessDelta.assign(tf.zeros([this.config.B]));
+        const [ B, T, C ] = this.config.model.batchInputShape! as number[];
+        const { ttl } = this.config.model;
+        this.fitnessDelta.assign(tf.zeros([B]));
         this.setState = [
-            tf.zeros([this.config.B, this.config.C], 'float32'),
-            tf.eye(this.config.C, ...[, ,], 'float32').expandDims(0).tile([this.config.B, 1, 1]),
-            tf.ones([this.config.B], 'float32').mul(this.config.TTL),
-            tf.zeros([this.config.B], 'int32'),
-            tf.zeros([this.config.B, this.config.T, this.config.C], 'float32'),
-            tf.ones([this.config.B], 'int32')
+            tf.zeros([B, C], 'float32'),
+            tf.eye(C, ...[, ,], 'float32').expandDims(0).tile([B, 1, 1]),
+            tf.ones([B], 'float32').mul(ttl),
+            tf.zeros([B], 'int32'),
+            tf.zeros([B, T, C], 'float32'),
+            tf.ones([B], 'int32')
         ];
     }
 
@@ -142,10 +142,12 @@ export default class NEAT implements NEATI {
     }
 
     evolve(model: tf.LayersModel) {
+        const [ B, T, C ] = this.config.model.batchInputShape! as number[];
+        const { mutationRate, mutationFactor } = this.config.trainer;
         tf.tidy(() => {
-            let probs = this.state.fitness.sub(this.state.fitness.sum().div(this.config.B)).clipByValue(0, Infinity).softmax() as tf.Tensor1D;
-            const indicesA = tf.multinomial(probs, this.config.B);
-            const indicesB = tf.multinomial(probs, this.config.B);
+            let probs = this.state.fitness.sub(this.state.fitness.sum().div(B)).clipByValue(0, Infinity).softmax() as tf.Tensor1D;
+            const indicesA = tf.multinomial(probs, B);
+            const indicesB = tf.multinomial(probs, B);
             const weights = model.getWeights(true);
             // Selector operator
             const weightsA = weights.map((layer: tf.Tensor) => layer.gather(indicesA));
@@ -158,8 +160,8 @@ export default class NEAT implements NEATI {
                 const weightsFromB = weightsB[layerI].mul(mask.sub(1).abs()); // Wherever genes aren't inherited from A are inherited from B
                 const newLayer = tf.add(weightsFromA, weightsFromB);
                 // Mutation operator
-                const mutationMask = tf.randomUniform(weights[layerI].shape, 0, 1).lessEqual(this.mutationRate).cast('float32');
-                const mutationValue = tf.randomUniform(weights[layerI].shape, -1, 1).mul(this.mutationFactor).mul(mutationMask);
+                const mutationMask = tf.randomUniform(weights[layerI].shape, 0, 1).lessEqual(mutationRate).cast('float32');
+                const mutationValue = tf.randomUniform(weights[layerI].shape, -mutationFactor, mutationFactor).mul(mutationMask);
                 const newLayerMutated = tf.clipByValue(newLayer.add(mutationValue), -1, 1); // Keep weights within interval [-1, 1]
                 newWeights.push(newLayerMutated);
             }

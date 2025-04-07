@@ -129,6 +129,7 @@ export const signedPlaneAngle = (A: tf.Tensor2D, B: tf.Tensor2D, C: tf.Tensor2D)
 
 // Length: n - 1
 export function generatePlaneIndices(n: number): tf.Tensor2D {
+    console.log(n)
     return tf.tidy(() => {
         return tf.tensor2d(Array.from(Array(n - 1).keys(), (v: number) => [0, v + 1]), ...[,], "int32");
     })

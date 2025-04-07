@@ -34,7 +34,10 @@
     --chart-3: 197 37% 24%;
     --chart-4: 43 74% 66%;
     --chart-5: 27 87% 67%;
-    --radius: 0.5rem}
+    --radius: 0.5rem
+    --tp-base-background-color: hsla(0, 0%, 0%, 1);
+  }
+
   .dark {
     --background: 0 0% 3.9%;
     --foreground: 0 0% 98%;
@@ -62,7 +65,30 @@
     --chart-5: 340 75% 55%}
 }
 
-
+:root {
+  --tp-base-background-color: hsla(0, 0%, 0%, 1.00);
+  --tp-base-shadow-color: hsla(0, 0%, 0%, 0.2);
+  --tp-button-background-color: hsla(0, 0%, 70%, 1);
+  --tp-button-background-color-active: hsla(0, 0%, 85%, 1);
+  --tp-button-background-color-focus: hsla(0, 0%, 80%, 1);
+  --tp-button-background-color-hover: hsla(0, 0%, 75%, 1);
+  --tp-button-foreground-color: hsla(0, 0%, 0%, 1);
+  --tp-container-background-color: hsla(0, 0%, 0%, 1.00);
+  --tp-container-background-color-active: hsla(0, 0%, 25%, 1);
+  --tp-container-background-color-focus: hsla(0, 0%, 20%, 1);
+  --tp-container-background-color-hover: hsla(0, 0%, 15%, 1);
+  --tp-container-foreground-color: hsla(0, 0%, 50%, 1);
+  --tp-groove-foreground-color: hsla(0, 0%, 10%, 1);
+  --tp-input-background-color: hsla(0, 0%, 10%, 1);
+  --tp-input-background-color-active: hsla(0, 0%, 25%, 1);
+  --tp-input-background-color-focus: hsla(0, 0%, 20%, 1);
+  --tp-input-background-color-hover: hsla(0, 0%, 15%, 1);
+  --tp-input-foreground-color: hsla(0, 0%, 51%, 1.00);
+  --tp-label-foreground-color: hsla(0, 0%, 50%, 1);
+  --tp-monitor-background-color: hsla(0, 0%, 6%, 1.00);
+  --tp-monitor-foreground-color: hsla(0, 0%, 51%, 1.00);
+  --tp-base-font-family: "Inter";
+}
 
 @layer base {
   * {

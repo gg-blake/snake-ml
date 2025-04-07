@@ -9,8 +9,8 @@ const C = 3;
 const T = 10;
 
 function main() {
-    const model = getModel(settings, 123);
-    const trainer = new NEAT(settings.model, settings.trainer);
+    const model = getModel(settings.model, 123);
+    const trainer = new NEAT(settings);
     for (let i = 0; i < 100; i++) {
         trainer.step(model);
     }

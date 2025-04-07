@@ -1,10 +1,15 @@
 import * as tf from '@tensorflow/tfjs';
 import { LayerArgs } from '@tensorflow/tfjs-layers/dist/engine/topology';
 import '@tensorflow/tfjs-backend-webgl';
-import GameLayer, { GameLayerConfig, IntermediateLayer } from './gamelayer';
+import GameLayer, * as GL from './gamelayer';
 import { generatePlaneIndices, project, dotProduct, cosineSimilarity, signedPlaneAngle, unsignedPlaneAngle } from '../util';
 
-const projectBatchUOntoV: IntermediateLayer<[tf.Tensor3D, tf.Tensor3D], tf.Tensor4D> = (B, T, C, U, V) => tf.tidy(() => {
+const projectBatchUOntoV = (
+    config: GL.Config, 
+    U: tf.Tensor3D, 
+    V: tf.Tensor3D
+) => tf.tidy(() => {
+    const [ B, T, C ] = config.batchInputShape! as number[];
     const dot1 = tf.matMul(U, V, false, true);
     const dot2 = V.square().sum(-1).expandDims(-1).tile([1, 1, T]).transpose([0, 2, 1]) // (B, T, C)
     const div1 = tf.div(dot1, dot2).transpose([0, 2, 1]).expandDims(-1).tile([1, 1, 1, C]);
@@ -13,7 +18,16 @@ const projectBatchUOntoV: IntermediateLayer<[tf.Tensor3D, tf.Tensor3D], tf.Tenso
     return mul1 as tf.Tensor4D
 });
 
-const calculateNearbyBody: IntermediateLayer<[tf.Tensor2D, tf.Tensor3D, tf.Tensor3D, tf.Tensor2D, number, number], tf.Tensor2D> = (B, T, C, position, direction, history, planeIndices, sensitivity, range) => tf.tidy(() => {
+const calculateNearbyBody = (
+    config: GL.Config, 
+    position: GL.Position<tf.Tensor>, 
+    direction: GL.Direction<tf.Tensor>, 
+    history: GL.History<tf.Tensor>, 
+    planeIndices: tf.Tensor2D, 
+    sensitivity: number, 
+    range: number
+) => tf.tidy(() => {
+    const [ B, T, C ] = config.batchInputShape! as number[];
     // position: (B, C)
     // history: (B, T, C) <- T = global max food
 
@@ -36,7 +50,7 @@ const calculateNearbyBody: IntermediateLayer<[tf.Tensor2D, tf.Tensor3D, tf.Tenso
 
     // Calculate the euclidean distance and mask it with cosine similarity (of a certain sensitivty)
     // Project each body part onto the given direction vector
-    const bodyProjections = projectBatchUOntoV(B, T, C, historyRelativePosition, direction);
+    const bodyProjections = projectBatchUOntoV(config, historyRelativePosition, direction);
     const bodyProjectionsCapped = tf.where(bodyProjections.isNaN(), tf.fill(bodyProjections.shape, range), bodyProjections); // Replace NaN with Infinity to ignore for minimum calculation
     const relativeDistances = bodyProjectionsCapped.square().sum(-1).sqrt().slice([0, 1, 0], [B, T-1, C]).min(-2);
     
@@ -48,7 +62,14 @@ const calculateNearbyBody: IntermediateLayer<[tf.Tensor2D, tf.Tensor3D, tf.Tenso
 // position: (B, C)
 // direction: (B, C, C)
 // target: (B, C)
-export const targetPlanarAngleDecomposition: IntermediateLayer<[tf.Tensor2D, tf.Tensor3D, tf.Tensor2D, tf.Tensor2D], tf.Tensor2D> = (B, T, C, position, direction, target, planeIndices) => tf.tidy(() => {
+export const targetPlanarAngleDecomposition = (
+    config: GL.Config, 
+    position: GL.Position<tf.Tensor>, 
+    direction: GL.Direction<tf.Tensor>, 
+    target: GL.TargetPosition<tf.Tensor>, 
+    planeIndices: tf.Tensor2D
+) => tf.tidy(() => {
+    const [ B, T, C ] = config.batchInputShape! as number[];
     // Translate vector space, positioning position at the origin
     const signedDisplacement = target.sub<tf.Tensor2D>(position); // (B, C)
     const signedDisplacementTiled: tf.Tensor2D = signedDisplacement.tile([C - 1, 1]); // (B * (C - 1), C)
@@ -68,7 +89,14 @@ export const targetPlanarAngleDecomposition: IntermediateLayer<[tf.Tensor2D, tf.
     return anglesBatch
 });
 
-const raycast: IntermediateLayer<[tf.Tensor2D, tf.Tensor3D, tf.Tensor3D, number], tf.Tensor2D> = (B, T, C, position, direction, normals, scale) => tf.tidy(() => {
+const raycast = (
+    config: GL.Config, 
+    position: GL.Position<tf.Tensor>, 
+    direction: GL.Direction<tf.Tensor>, 
+    normals: tf.Tensor3D, 
+    scale: number
+) => tf.tidy(() => {
+    const [ B, T, C ] = config.batchInputShape! as number[];
     // position: (B, C)
     // direction: (B, C, C)
     
@@ -99,20 +127,26 @@ const inBounds = (A: tf.Tensor2D): tf.Tensor2D => tf.tidy(() => {
     return xor
 })
 
-export const calculateNearbyBounds: IntermediateLayer<[tf.Tensor2D, tf.Tensor3D, number], tf.Tensor1D> = (B, T, C, position: tf.Tensor2D, direction: tf.Tensor3D, scale: number) => tf.tidy(() => {
+export const calculateNearbyBounds = (
+    config: GL.Config, 
+    position: GL.Position<tf.Tensor>, 
+    direction: GL.Direction<tf.Tensor>, 
+): tf.Tensor1D => tf.tidy(() => {
+    const [ B, T, C ] = config.batchInputShape! as number[];
+    const { boundingBoxLength } = config;
     const boxNormals = tf.concat([tf.eye(C), tf.eye(C).neg()], 0).expandDims(0).tile([B, 1, 1]) as tf.Tensor3D; // (B, 2C, C)
-    const raycasted = raycast(B, T, C, position, direction, boxNormals, scale);
+    const raycasted = raycast(config, position, direction, boxNormals, boundingBoxLength);
     const mask = inBounds(raycasted).cast<tf.Tensor2D>('float32');
     const distance = closestDistance(raycasted.mul(mask));
     
-    return distance
+    return distance.div(Math.sqrt(C * ((boundingBoxLength * 2) ^ 2))).clipByValue(0, 1).mul(2).sub(1) as tf.Tensor1D
 })
 
 type InputNormInputs = [
-    tf.Tensor2D, // Position (B, C) [B, 0, C]
-    tf.Tensor3D, // Direction (B, C, C) [B, C, C]
-    tf.Tensor2D, // Target (B, C) [B, C+1, C]
-    tf.Tensor3D // History (B, T, C) [B, T, C]
+    GL.Position<tf.Tensor>, // Position (B, C) [B, 0, C]
+    GL.Direction<tf.Tensor>, // Direction (B, C, C) [B, C, C]
+    GL.TargetPosition<tf.Tensor>, // Target (B, C) [B, C+1, C]
+    GL.History<tf.Tensor> // History (B, T, C) [B, T, C]
 ];
 
 type InputNormSymbolicInputs = [
@@ -131,38 +165,39 @@ interface InputNormState {
 export default class InputNorm extends GameLayer {
     planeIndices: tf.Tensor2D;
 
-    constructor(config: LayerArgs, gameConfig: GameLayerConfig) {
-        super(config, gameConfig);
-        this.inputSpec = [
-            {shape: [this.B, this.C]},
-            {shape: [this.B, this.C, this.C]},
-            {shape: [this.B, this.C]},
-            {shape: [this.B, this.T, this.C]}
-        ]
-        this.planeIndices = generatePlaneIndices(this.C);
+    constructor(config: LayerArgs & GL.Config) {
+        super(config, InputNorm.className);
+        const [ B, T, C ] = this.config.batchInputShape! as number[];
+        this.planeIndices = generatePlaneIndices(C);
     }
 
     call(inputs: InputNormInputs): tf.Tensor3D {
+        const [ B, T, C ] = this.config.batchInputShape! as number[];
         
         // (B, 2C+2, C)
         return tf.tidy(() => {
             // Target input normalization
-            const nearbyTarget = targetPlanarAngleDecomposition(this.B, this.T, this.C, inputs[0], inputs[1], inputs[2], this.planeIndices).div(Math.PI) as tf.Tensor2D; // (B, C - 1) Interval:[-1, 1]
+            const nearbyTarget = targetPlanarAngleDecomposition(this.config, inputs[0], inputs[1], inputs[2], this.planeIndices).div(Math.PI) as tf.Tensor2D; // (B, C - 1) Interval:[-1, 1]
+            const nearbyTargetDiscrete = tf.concat([
+                nearbyTarget.where(nearbyTarget.greaterEqual(0), tf.ones(nearbyTarget.shape)),
+                nearbyTarget.where(nearbyTarget.lessEqual(0), tf.ones(nearbyTarget.shape)),
+            ], 1)
             // Body input normalization
-            const nearbyBody = calculateNearbyBody(this.B, this.T, this.C, inputs[0], inputs[1], inputs[3], this.planeIndices, 0.95, 1000).slice([0, 0], [this.B, 1]).squeeze([1]) as tf.Tensor1D; // (B,)
+            const nearbyBody = calculateNearbyBody(this.config, inputs[0], inputs[1], inputs[3], this.planeIndices, 0.95, 1000).slice([0, 0], [B, 1]).squeeze([1]) as tf.Tensor1D; // (B,)
             // Bounds input normalization
-            const nearbyBounds = calculateNearbyBounds(this.B, this.T, this.C, inputs[0], inputs[1], this.boundingBoxLength); // (B,)
+            const nearbyBounds = calculateNearbyBounds(this.config, inputs[0], inputs[1]); // (B,)
 
             // Concatenate all sensory data to a single input vector
             return tf.concat([
-                nearbyTarget, 
+                nearbyTargetDiscrete, 
                 nearbyBounds.expandDims(-1)
             ], 1).expandDims(-1) as tf.Tensor3D; // (B, 3)
         })
     }
 
-    computeOutputShape(inputShape: tf.Shape[]): tf.Shape | tf.Shape[] {
-        return [this.B, this.C, 1];
+    computeOutputShape(inputShape: tf.Shape[]): tf.Shape {
+        const [ B, T, C ] = this.config.batchInputShape! as number[];
+        return [B, 2 * (C - 1) + 1, 1];
     }
     
     static get className() {

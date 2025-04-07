@@ -6,9 +6,11 @@ import { calculateNearbyBounds } from './layers/inputnorm';
 import { arraySync, Data } from './model';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { clamp, generatePlaneIndices } from './util';
+import * as GL from "./layers/gamelayer";
 
-const projectDirectionToBounds = (B: number, T: number, C: number, position: tf.Tensor2D, direction: tf.Tensor3D, scale: number): tf.Tensor2D => tf.tidy(() => {
-    const distance = calculateNearbyBounds(B, T, C, position, direction, scale).expandDims(-1).tile([1, C]) as tf.Tensor2D;
+const projectDirectionToBounds = (config: GL.Config, position: tf.Tensor2D, direction: tf.Tensor3D): tf.Tensor2D => tf.tidy(() => {
+    const [ B, T, C ] = config.batchInputShape! as number[];
+    const distance = calculateNearbyBounds(config, position, direction).expandDims(-1).tile([1, C]) as tf.Tensor2D;
     
     const forwardVectors = direction.slice([0, 0, 0], [B, 1, C]).squeeze([1]) as tf.Tensor2D;
     const proj = tf.add(position, tf.mul(forwardVectors, distance)) as tf.Tensor2D;
@@ -95,7 +97,8 @@ export class Renderer {
 
     // Add a population to the scene
     addBatchParams(params: Data<number>, offset: number = 0) {
-        for (let paramIndex = offset; paramIndex < settings.model.B + offset; paramIndex++) {
+        const [ B, T, C ] = settings.model.batchInputShape! as number[];
+        for (let paramIndex = offset; paramIndex < B + offset; paramIndex++) {
             this.addParam(params, paramIndex, offset);
         }
     }
@@ -162,7 +165,8 @@ export class Renderer {
 
     // Update a population in the scene
     updateParams(params: Data<number>, offset: number = 0) {
-        for (let paramIndex = offset; paramIndex < settings.model.B + offset; paramIndex++) {
+        const [ B, T, C ] = settings.model.batchInputShape! as number[];
+        for (let paramIndex = offset; paramIndex < B + offset; paramIndex++) {
             this.updateParam(params, paramIndex, offset);
         }
     }
@@ -292,28 +296,29 @@ export class NEATRenderer extends Renderer {
         this.render();
     }
 
-    renderStep(model: NEAT) {
+    renderStep(trainer: NEAT) {
+        const [ B, T, C ] = trainer.config.model.batchInputShape! as number[];
+        const { boundingBoxLength, fitnessGraphParams } = trainer.config.model;
         if (this.controls == null) {
             throw new Error("Must initialize orbit controls first with renderInit()");
         }
 
-        const params = arraySync(model.state)
+        const params = arraySync(trainer.state)
         this.updateParams(params);
 
         if (settings.renderer.showProjections) {
-            this.renderProjections(model);
+            this.renderProjections(trainer);
         } else if (this.group.hasOwnProperty('projections')) {
             this.removeGroup('projections');
         }
 
         
 
-        if (model.config.C > 3) {
+        if (C > 3) {
             const position = params.position;
-            const length = model.config.boundingBoxLength;
             Object.values(this.uuids).map((uuid: string[], index: number) => {
                 const mesh = this.scene.getObjectByProperty('uuid', uuid[0]) as THREE.Mesh;
-                (mesh.material as THREE.MeshStandardMaterial).color.lerpHSL(new THREE.Color((position[index][3] + length) / (length * 2), 1, 1), 0.5);
+                (mesh.material as THREE.MeshStandardMaterial).color.lerpHSL(new THREE.Color((position[index][3] + boundingBoxLength) / (boundingBoxLength * 2), 1, 1), 0.5);
             })
         } else {
             Object.values(this.uuids).map((uuid: string[], index: number) => {
@@ -323,36 +328,36 @@ export class NEATRenderer extends Renderer {
         }
 
         if (settings.renderer.showFitnessDelta) {
-            const fitnessDelta = model.fitnessDelta.arraySync() as number[];
-            const max = model.fitnessDelta.max().arraySync() as number;
-            const min = model.fitnessDelta.min().arraySync() as number;
+            const fitnessDelta = trainer.fitnessDelta.arraySync() as number[];
+            const { a, b, c } = fitnessGraphParams;
+            const max = a / (4 * b + c);
+            const min = -a / c;
             const dt = max - min;
             Object.values(this.uuids).map((uuid: string[], index: number) => {
                 const mesh = this.scene.getObjectByProperty('uuid', uuid[0]) as THREE.Mesh;
                 const delta = fitnessDelta[index];
                 (mesh.material as THREE.MeshStandardMaterial).color.setRGB(clamp(1 - (delta - min) / dt, 0, 1), clamp((delta - min) / dt, 0, 1), 0)
             })
-            //console.log(colors)
         }
 
         if (settings.renderer.showTargetRays) {
-            this.renderTargetRays(model);
+            this.renderTargetRays(trainer);
         } else if(this.group.hasOwnProperty('target_rays')) {
             this.removeGroup('target_rays');
         }
 
         if (settings.renderer.showNormals) {
-            this.renderNormals(model);
+            this.renderNormals(trainer);
         } else if (this.group.hasOwnProperty('normals')) {
             this.removeGroup('normals');
         }
 
         tf.tidy(() => {
-            const targetIndices = model.state.target.max(0).arraySync() as number;
-            this.updateGroupMaterial('targets', Array.from(Array(model.config.T).keys(), (i: number) => i == targetIndices ? NEATRenderer.primaryFoodMaterial : NEATRenderer.secondaryFoodMaterial))
+            const targetIndices = trainer.state.target.max(0).arraySync() as number;
+            this.updateGroupMaterial('targets', Array.from(Array(T).keys(), (i: number) => i == targetIndices ? NEATRenderer.primaryFoodMaterial : NEATRenderer.secondaryFoodMaterial))
         })
 
-        const alive = model.state.active.arraySync() as number[];
+        const alive = trainer.state.active.arraySync() as number[];
         Object.values(this.uuids).map((uuid: string[], index: number) => {
             if (!alive[index]) {
                 const mesh = this.scene.getObjectByProperty('uuid', uuid[0]) as THREE.Mesh;
@@ -361,7 +366,7 @@ export class NEATRenderer extends Renderer {
         })
 
         if (settings.renderer.showBest) {
-            (model.state.fitness.greaterEqual(model.state.fitness.mul(model.state.active.cast('float32')).max()).cast('int32').arraySync() as number[])
+            (trainer.state.fitness.greaterEqual(trainer.state.fitness.mul(trainer.state.active.cast('float32')).max()).cast('int32').arraySync() as number[])
             .map((value: number, index: number) => {
                 if (value == 0) {
                     const mesh = this.scene.getObjectByProperty('uuid', this.uuids[index][0]) as THREE.Mesh;
@@ -383,9 +388,9 @@ export class NEATRenderer extends Renderer {
         delete this.group[key];
     }
 
-    renderProjections(model: NEAT) {
+    renderProjections(trainer: NEAT) {
         tf.tidy(() => {
-            const proj = projectDirectionToBounds(model.config.B, model.config.T, model.config.C, model.state.position, model.state.direction, model.config.boundingBoxLength);
+            const proj = projectDirectionToBounds(trainer.config.model, trainer.state.position, trainer.state.direction);
             const projectionPositions = (proj.arraySync() as number[][]);
             if (!this.group.hasOwnProperty('projections')) {
                 this.addBoxGroup('projections', projectionPositions, Renderer.debugMaterial);
@@ -395,10 +400,11 @@ export class NEATRenderer extends Renderer {
         })
     }
 
-    renderNormals(model: NEAT) {
+    renderNormals(trainer: NEAT) {
+        const [ B, T, C ] = trainer.config.model.batchInputShape! as number[];
         tf.tidy(() => {
-            const positionTile = model.state.position.expandDims(1).tile([1, model.config.C, 1]).reshape([model.config.B * model.config.C, model.config.C]);
-            const directionTile = positionTile.add(model.state.direction.reshape([model.config.B * model.config.C, model.config.C]));
+            const positionTile = trainer.state.position.expandDims(1).tile([1, C, 1]).reshape([B * C, C]);
+            const directionTile = positionTile.add(trainer.state.direction.reshape([B * C, C]));
             if (!this.group.hasOwnProperty('normals')) {
                 this.addLineGroup('normals', positionTile.arraySync() as number[][], directionTile.arraySync() as number[][]);
                 return;
@@ -408,10 +414,10 @@ export class NEATRenderer extends Renderer {
         })
     }
 
-    renderTargetRays(model: NEAT) {
+    renderTargetRays(trainer: NEAT) {
         tf.tidy(() => {
-            const targetPositions = model.target.gather(model.state.target).arraySync() as number[][];
-            const position = model.state.position.arraySync() as number[][];
+            const targetPositions = trainer.target.gather(trainer.state.target).arraySync() as number[][];
+            const position = trainer.state.position.arraySync() as number[][];
             if (!this.group.hasOwnProperty('target_rays')) {
                 this.addLineGroup('target_rays', targetPositions, position);
                 return;
@@ -419,11 +425,11 @@ export class NEATRenderer extends Renderer {
             this.updateLineGroupPosition('target_rays', targetPositions, position);
 
             if (settings.renderer.showBest) {
-                this.updateLineGroupMaterial('target_rays', (model.state.fitness.greaterEqual(model.state.fitness.mul(model.state.active.cast("float32")).max()).cast('int32').arraySync() as number[]).map((value: number) => value == 1 ? Renderer.primaryDebugLineMaterial : Renderer.secondaryDebugLineMaterial));
+                this.updateLineGroupMaterial('target_rays', (trainer.state.fitness.greaterEqual(trainer.state.fitness.mul(trainer.state.active.cast("float32")).max()).cast('int32').arraySync() as number[]).map((value: number) => value == 1 ? Renderer.primaryDebugLineMaterial : Renderer.secondaryDebugLineMaterial));
                 return;
             }
 
-            this.updateLineGroupMaterial('target_rays', (model.state.active.arraySync() as number[]).map((value: number) => value == 1 ? Renderer.primaryDebugLineMaterial : Renderer.secondaryDebugLineMaterial));
+            this.updateLineGroupMaterial('target_rays', (trainer.state.active.arraySync() as number[]).map((value: number) => value == 1 ? Renderer.primaryDebugLineMaterial : Renderer.secondaryDebugLineMaterial));
         })
     }
 }

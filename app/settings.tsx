@@ -2,10 +2,13 @@ import { FolderApi, Pane, TabPageApi, BindingParams } from "tweakpane";
 import { useEffect, useRef } from "react";
 import { NEATRenderer } from "./lib/renderer";
 import * as THREE from 'three';
-import GameLayer, { GameLayerConfig } from "./lib/layers/gamelayer";
+import GameLayer, * as GL from "./lib/layers/gamelayer";
 import { NEATConfig } from "./lib/optimizer";
 import { model } from "@tensorflow/tfjs";
+import { LayerArgs } from '@tensorflow/tfjs-layers/dist/engine/topology';
 
+import { Inter } from 'next/font/google';
+const inter = Inter({ subsets: ['latin'], weight: "variable" })
 export interface RendererConfig {
     showProjections: boolean;
     showFitnessDelta: boolean;
@@ -24,7 +27,7 @@ interface DifferentialEvolutionTrainerConfig {
 
 export interface Settings {
     renderer: RendererConfig;
-    model: GameLayerConfig;
+    model: GL.Config & LayerArgs;
     trainer: NEATConfig;
 }
 
@@ -39,23 +42,22 @@ var settings: Settings = {
         renderEpochInterval: 1
     },
     model: {
-        TTL: 200,
-        B: 100,
-        T: 10,
-        C: 3,
+        ttl: 20,
+        batchInputShape: [100, 10, 3],
         startingLength: 5,
         boundingBoxLength: 30,
-        units: 100,
+        units: 24,
         fitnessGraphParams: {
             a: 10,
             b: 1.5,
             c: 4,
             min: -1,
             max: 1
-        }
+        },
+        dtype: 'float32'
     },
     trainer: {
-        mutationFactor: 0.01,
+        mutationFactor: 0.1,
         mutationRate: 0
     }
 }
@@ -65,6 +67,8 @@ var pendingSettings = settings;
 export interface Stats {
     maxFitness: number;
     maxFitnessGlobal: number;
+    maxTargetIndex: number;
+    maxTargetIndexGlobal: number;
     framesToRestart: number;
     timeToRestart: number;
     fps: number;
@@ -72,16 +76,18 @@ export interface Stats {
 }
 
 export var stats: Stats = {
-    maxFitness: settings.model.TTL,
-    maxFitnessGlobal: settings.model.TTL,
-    framesToRestart: settings.model.TTL,
+    maxFitness: settings.model.ttl,
+    maxFitnessGlobal: settings.model.ttl,
+    maxTargetIndex: 0,
+    maxTargetIndexGlobal: 0,
+    framesToRestart: settings.model.ttl,
     timeToRestart: 0,
     fps: 0,
     epochCount: 0
 }
 
 
-settings.trainer.mutationRate = 0.5;
+settings.trainer.mutationRate = 1 / settings.model.batchInputShape![0]!;
 pendingSettings.trainer.mutationRate = settings.trainer.mutationRate
 export {settings, pendingSettings};
 
@@ -121,11 +127,7 @@ export function SettingsPane({ killRequest, endRequest }: { killRequest: React.M
                 { title: 'Visual' },
             ],
         });
-        addModelParameterBinding(tab.pages[0], 'TTL', { step: 10, min: 50, max: 300, label: 'Time to Live' }, endRequest);
-        addModelParameterBinding(tab.pages[0], 'B', { step: 1, min: 4, max: 1000, label: 'Batch Size' }, endRequest)
-        addModelParameterBinding(tab.pages[0], 'T', { step: 1, min: 10, max: 100, label: 'Number of Food' }, endRequest);
-        addModelParameterBinding(tab.pages[0], 'C', { step: 1, min: 2, max: 15, label: 'Number of Dimensions' }, endRequest);
-        addModelParameterBinding(tab.pages[0], 'startingLength', { step: 1, min: 1, max: 100, label: 'Starting Snake Length' }, endRequest);
+        addModelParameterBinding(tab.pages[0], 'ttl', { step: 10, min: 50, max: 300, label: 'Time to Live' }, endRequest);
         addModelParameterBinding(tab.pages[0], 'boundingBoxLength', { step: 5, min: 5, max: 1000, label: 'Bound Box Length' }, endRequest);
         addModelParameterBinding(tab.pages[0], 'units', { step: 1, min: 1, max: 300, label: 'Number of Hidden Layer Nodes' }, endRequest);
         addTrainingParameterBinding(tab.pages[0], 'mutationRate', { step: 0.01, min: 0, max: 1, label: 'Mutation Rate' }, killRequest);
@@ -172,7 +174,7 @@ export function SettingsPane({ killRequest, endRequest }: { killRequest: React.M
             readonly: true,
             view: 'graph',
             min: 0,
-            max: settings.model.TTL,
+            max: settings.model.ttl,
             label: "Number of Frames Until Next Generation"
         });
 
@@ -191,14 +193,40 @@ export function SettingsPane({ killRequest, endRequest }: { killRequest: React.M
             lable: "Current Epoch"
         });
 
+        pane.addBinding(stats, 'maxTargetIndex', {
+            readonly: true,
+            view: 'graph',
+            min: 0,
+            max: settings.model.batchInputShape![1]!,
+            label: "Max Target Index Current Epoch"
+        })
+
+        pane.addBinding(stats, 'maxTargetIndex', {
+            readonly: true,
+            label: "Max Target Index Current Epoch"
+        })
+
+        pane.addBinding(stats, 'maxTargetIndexGlobal', {
+            readonly: true,
+            view: 'graph',
+            min: 0,
+            max: settings.model.batchInputShape![1]!,
+            label: "Max Target Index All-time"
+        })
+
+        pane.addBinding(stats, 'maxTargetIndexGlobal', {
+            readonly: true,
+            label: "Max Target Index All-time"
+        })
+
         return () => {
             console.log('Ref unmounted');
         };
     }
 
     return (
-        <div className="absolute right-0 m-2">
-            <div ref={paneRef}>
+        <div className="absolute right-0 top-0 m-2 z-100">
+            <div className={`${inter.className} z-100 border-primary-foreground border-[1px] rounded-lg`} ref={paneRef}>
 
             </div>
         </div>

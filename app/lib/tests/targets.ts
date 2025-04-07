@@ -11,7 +11,7 @@ function getModel() {
     const direction = tf.input({ batchShape: [B, C, C], dtype: 'float32' });
     const target = tf.input({ batchShape: [B, C], dtype: 'float32' });
     const inputHistory = tf.input({ batchShape: [B, T, C], dtype: 'float32' });
-    const norm = new InputNorm({ batchInputShape: [B, T, C], dtype: 'float32', name: "inputnorm" }, settings.model).apply([position, direction, target, inputHistory]) as tf.SymbolicTensor;
+    const norm = new InputNorm(settings.model).apply([position, direction, target, inputHistory]) as tf.SymbolicTensor;
 
     return tf.model({
         inputs: [position, direction, target, inputHistory],

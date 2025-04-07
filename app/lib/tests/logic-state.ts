@@ -9,13 +9,13 @@ const B = 5;
 const C = 3;
 const T = 10;
 
-settings.trainer.mutationRate = 1/settings.model.B;
+settings.trainer.mutationRate = 1 / settings.model.batchInputShape![0]!;
 
 function main() {
 
-    const model = getModel(settings, 123);
+    const model = getModel(settings.model, 123);
 
-    const trainer = new NEAT(settings.model, settings.trainer);
+    const trainer = new NEAT(settings);
     trainer.resetState();
     trainer.target.print(true);
 
