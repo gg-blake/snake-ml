@@ -1,12 +1,12 @@
 import * as THREE from 'three';
 import { settings } from "../settings";
 import * as tf from '@tensorflow/tfjs';
-import NEAT from './optimizer';
-import { calculateNearbyBounds } from './layers/inputnorm';
-import { arraySync, Data } from './model';
+import NEAT from '../lib/optimizer';
+import { calculateNearbyBounds } from '../lib/layers/inputnorm';
+import { arraySync, Data } from '../lib/model';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { clamp, generatePlaneIndices } from './util';
-import * as GL from "./layers/gamelayer";
+import { clamp, generatePlaneIndices } from '../lib/util';
+import * as GL from "../lib/layers/gamelayer";
 
 const projectDirectionToBounds = (config: GL.Config, position: tf.Tensor2D, direction: tf.Tensor3D): tf.Tensor2D => tf.tidy(() => {
     const [ B, T, C ] = config.batchInputShape! as number[];

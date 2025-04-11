@@ -1,6 +1,6 @@
 import { FolderApi, Pane, TabPageApi, BindingParams } from "tweakpane";
 import { useEffect, useRef } from "react";
-import { NEATRenderer } from "./lib/renderer";
+import { NEATRenderer } from "./renderer/renderer";
 import * as THREE from 'three';
 import GameLayer, * as GL from "./lib/layers/gamelayer";
 import { NEATConfig } from "./lib/optimizer";

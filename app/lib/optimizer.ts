@@ -2,7 +2,7 @@ import * as tf from '@tensorflow/tfjs';
 import { NamedTensor } from '@tensorflow/tfjs-core/dist/tensor_types';
 import GameLayer, * as GL from './layers/gamelayer';
 import { Data, DataValues } from './model';
-import { NEATRenderer, Renderer } from './renderer';
+import { NEATRenderer, Renderer } from '../renderer/renderer';
 import { generatePlaneIndices } from './util';
 import InputNorm from './layers/inputnorm';
 import Logic from './layers/logic';
