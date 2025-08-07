@@ -1,12 +1,12 @@
 import * as THREE from 'three';
-import { settings } from "../settings";
+import { settings } from "../../../app/settings";
 import * as tf from '@tensorflow/tfjs';
-import NEAT from './optimizer';
-import { calculateNearbyBounds } from './layers/inputnorm';
-import { arraySync, Data } from './model';
+import NEAT from '../optimizer';
+import { calculateNearbyBounds } from '../layers/augment';
+import { arraySync, Data } from '../model';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { clamp, generatePlaneIndices } from './util';
-import * as GL from "./layers/gamelayer";
+import { clamp, generatePlaneIndices } from '../util';
+import * as GL from "../layers/gamelayer";
 
 const projectDirectionToBounds = (config: GL.Config, position: tf.Tensor2D, direction: tf.Tensor3D): tf.Tensor2D => tf.tidy(() => {
     const [ B, T, C ] = config.batchInputShape! as number[];
@@ -28,7 +28,7 @@ export class Renderer {
     // Generic geometry
     static primaryGeometry = new THREE.BoxGeometry();
     // Snake head material (current population)
-    static primaryMaterial = new THREE.MeshStandardMaterial({ color: 0x72e66c, roughness: 1 });
+    static primaryMaterial = new THREE.MeshStandardMaterial({ color: 0xe7fc00, roughness: 1 });
     // Snake dead material
     static secondaryMaterial = new THREE.MeshStandardMaterial({ color: 0x000000, roughness: 1, opacity: 0 });
     // Food material (most recently generated food)
