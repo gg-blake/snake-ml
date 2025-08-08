@@ -1,5 +1,5 @@
 import { vec3, mat4 } from "gl-matrix";
-import Logging from "./logger";
+import Logging from "../logger";
 import { MeshBuffers } from "./renderer";
 
 export default class Lighting extends Logging {
@@ -13,8 +13,9 @@ export default class Lighting extends Logging {
         directionalLightPosition: [number, number, number],
         directionLightColor: [number, number, number],
         ambientLightColor: [number, number, number],
+        debug?: boolean
     ) {
-        super();
+        super(debug);
         this._gl = gl;
         this.directionalLightPosition = vec3.create();
         vec3.copy(this.directionalLightPosition, directionalLightPosition);

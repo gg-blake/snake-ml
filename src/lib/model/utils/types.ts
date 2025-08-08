@@ -10,7 +10,7 @@ export interface FitnessGraphParams extends tf.serialization.ConfigDict {
     max: number;
 }
 
-export interface Config extends tf.serialization.ConfigDict {
+export interface Config extends LayerArgs {
     stepSize: number;
     ttl: number;
     startingLength: number;
@@ -117,7 +117,7 @@ export type LayerCallbackConfig<
     T extends tf.Tensor | tf.Variable,
     I extends LayerInputs<T>,
     O extends LayerOutputs<T>,
-> = (inputs: I, config: LayerArgs & Config) => O;
+> = (inputs: I, config: Config) => O;
 export type LayerCallback<
     T extends tf.Tensor | tf.Variable,
     I extends LayerInputs<T>,
@@ -129,7 +129,7 @@ const layerFn = <
     I extends LayerInputs<T>,
     O extends LayerOutputs<T>,
 >(
-    config: LayerArgs & Config,
+    config: Config,
     callback: LayerCallbackConfig<T, I, O>,
 ) => {
     const wrapper = (inputs: I) => tf.tidy(() => callback(inputs, config));

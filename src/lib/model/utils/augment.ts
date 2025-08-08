@@ -1,7 +1,14 @@
 import * as tf from "@tensorflow/tfjs";
-import { LayerArgs } from "@tensorflow/tfjs-layers/dist/engine/topology";
-import "@tensorflow/tfjs-backend-webgl";
-import { Config, History, TargetPosition, Position, Direction, LayerCallbackConfig, AugmentInputs, AugmentOutputs } from "./types";
+import {
+    Config,
+    History,
+    TargetPosition,
+    Position,
+    Direction,
+    LayerCallbackConfig,
+    AugmentInputs,
+    AugmentOutputs,
+} from "./types";
 import {
     generatePlaneIndices,
     project,
@@ -11,11 +18,7 @@ import {
     unsignedPlaneAngle,
 } from "./augment-utils";
 
-const projectBatchUOntoV = (
-    config: Config,
-    U: tf.Tensor3D,
-    V: tf.Tensor3D,
-) =>
+const projectBatchUOntoV = (config: Config, U: tf.Tensor3D, V: tf.Tensor3D) =>
     tf.tidy(() => {
         const [B, T, C] = config.batchInputShape! as number[];
         const dot1 = tf.matMul(U, V, false, true);
@@ -52,7 +55,7 @@ const calculateNearbyBody = (
         const positionBroadcasted = position
             .expandDims(1)
             .tile([1, T, 1]) as tf.Tensor3D; // (B, T, C)
-        
+
         const historyRelativePosition =
             history.sub<tf.Tensor3D>(positionBroadcasted);
         const positionBroadcastedReshaped = positionBroadcasted.reshape([
@@ -246,10 +249,11 @@ export const calculateNearbyBounds = (
             .sub(1) as tf.Tensor1D;
     });
 
-const augment: LayerCallbackConfig<tf.Tensor, AugmentInputs<tf.Tensor>, AugmentOutputs<tf.Tensor>> = (
-    inputs,
-    config,
-): tf.Tensor3D => {
+const augment: LayerCallbackConfig<
+    tf.Tensor,
+    AugmentInputs<tf.Tensor>,
+    AugmentOutputs<tf.Tensor>
+> = (inputs, config): tf.Tensor3D => {
     const [B, T, C] = config.batchInputShape! as number[];
 
     // (B, 2C+2, C)

@@ -1,4 +1,4 @@
-import Logging from "./logger";
+import Logging from "../logger";
 import { mat4 } from "gl-matrix";
 
 export default class Camera extends Logging {
@@ -15,8 +15,9 @@ export default class Camera extends Logging {
         gl: WebGL2RenderingContext,
         startingZoom: number = -100,
         verbose?: boolean,
+        debug?: boolean
     ) {
-        super();
+        super(debug);
         this._gl = gl;
         this.position = [0, 0, startingZoom]; // eye position
         this.target = [0, 0, 0]; // what you're looking at
@@ -104,7 +105,7 @@ export default class Camera extends Logging {
 
         // Camera controls
         mat4.targetTo(modelViewMatrix, this.position, this.target, this.up);
-
+        
         // Projection Matrix uniform
         const pmLocation = gl.getUniformLocation(program, "uProjectionMatrix");
         gl.uniformMatrix4fv(pmLocation, false, projectionMatrix);

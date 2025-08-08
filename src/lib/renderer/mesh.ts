@@ -1,4 +1,4 @@
-import Logging from "./logger";
+import Logging from "../logger";
 
 interface MeshBuffers {
     position: WebGLBuffer;
@@ -23,8 +23,8 @@ export class Cube extends Logging implements Mesh {
     _gl: WebGL2RenderingContext;
     buffers: MeshBuffers | null;
 
-    constructor(gl: WebGL2RenderingContext) {
-        super();
+    constructor(gl: WebGL2RenderingContext, debug?: boolean) {
+        super(debug);
         this._gl = gl;
         this.buffers = null;
     }

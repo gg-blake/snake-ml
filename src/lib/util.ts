@@ -182,7 +182,7 @@ function assertSameContext(
     }
 }
 
-function loadTensorTexture(tensor: tf.Tensor, glData: WebGLData): tf.GPUData {
+function loadTensorData(tensor: tf.Tensor, glData: WebGLData): tf.GPUData {
     const { gl, program } = glData;
 
     // Get the tensor's underlying texture
@@ -211,4 +211,4 @@ function loadTensorTexture(tensor: tf.Tensor, glData: WebGLData): tf.GPUData {
     return data;
 }
 
-export { loadTensorTexture, initContext, assertSameContext };
+export { loadTensorData, initContext, assertSameContext };

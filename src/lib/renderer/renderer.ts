@@ -1,48 +1,62 @@
 import * as tf from "@tensorflow/tfjs";
 import { mat4, vec3 } from "gl-matrix";
 import { vertexShaderSource, fragmentShaderSource } from "./shaders";
-import Logging from "./logger";
+import Logging from "../logger";
 import { Cube, Mesh, MeshBuffers } from "./mesh";
 import Camera from "./camera";
 import Lighting from "./lighting";
 import Scene from "./scene";
 
+const contextOptions: WebGLContextAttributes = {
+    // https://www.khronos.org/registry/webgl/specs/latest/1.0/#5.2
+    alpha: false,
+    antialias: false,
+    premultipliedAlpha: false,
+    preserveDrawingBuffer: false,
+    depth: false,
+    stencil: false,
+    failIfMajorPerformanceCaveat: false,
+    desynchronized: true,
+}
+
+interface RendererOptions {
+    verbose?: boolean;
+    debug?: true;
+}
+
 class Renderer extends Logging {
     _gl: WebGL2RenderingContext;
+    options: RendererOptions;
     width: number;
     height: number;
     program: WebGLProgram;
     scene: Scene;
 
-    constructor(canvas: HTMLCanvasElement, verbose?: boolean) {
-        super();
+    constructor(canvas: HTMLCanvasElement, options: RendererOptions) {
+        super(options.debug);
+        this.options = options;
         this.width = canvas.width;
         this.height = canvas.height;
-        this._gl = canvas.getContext("webgl2", {
-            // https://www.khronos.org/registry/webgl/specs/latest/1.0/#5.2
-            alpha: false,
-            antialias: false,
-            premultipliedAlpha: false,
-            preserveDrawingBuffer: false,
-            depth: false,
-            stencil: false,
-            failIfMajorPerformanceCaveat: false,
-            desynchronized: true,
-        })!;
-        // Set clear color to black, fully opaque
-        this._gl.clearColor(0.0, 0.0, 0.0, 1.0);
-        // Clear the color buffer with specified clear color
-        this._gl.clear(this._gl.COLOR_BUFFER_BIT);
+        this._gl = canvas.getContext("webgl2", contextOptions)!;
         this.program = this._initProgram(this._gl);
-        this.scene = new Scene(this._gl);
+        this.scene = new Scene(this._gl, this.options.debug);
+        // Add lighting to the scene
         this.scene.light = new Lighting(
             this._gl,
             [0.85, 0.8, 0.75],
             [1.0, 1.0, 1.0],
             [0.3, 0.3, 0.3],
         );
-        this.scene.camera = new Camera(this._gl, ...[,], verbose);
-        this.scene.add(new Cube(this._gl));
+        // Add camera to the scene
+        this.scene.camera = new Camera(
+            this._gl,
+            ...[,],
+            this.options.verbose,
+            this.options.debug,
+        );
+        // Add cube mesh to the scene
+        const cube = new Cube(this._gl, this.options.debug);
+        this.scene.add(cube);
     }
 
     _initProgram(gl: WebGL2RenderingContext) {
@@ -96,7 +110,9 @@ class Renderer extends Logging {
         const parent = canvas.parentNode;
         parent?.removeChild(this._gl.canvas as HTMLCanvasElement); // Unmount canvas
         if (verbose) this.log("canvas unmounted");
-        tf.removeBackend("custom-webgl"); // Unregister shared WebGL context
+        delete tf.engine().registryFactory['custom-webgl'];
+        delete tf.engine().registry['custom-webgl'];
+        tf.setBackend('cpu'); // or any available backend
         if (verbose) this.log("Unregistered shared WebGL context");
         if (verbose) this.log("unmounted");
     }

@@ -74,7 +74,7 @@ const movement: LayerCallbackConfig<
 > = (inputs: MovementInputs<tf.Tensor>, config) => {
     const [B, T, C] = config.batchInputShape! as number[];
 
-    const half = generatePlaneIndices(B);
+    const half = generatePlaneIndices(C);
     const planeIndices = half.reverse(-1).concat(half, 0); // (2 * (C - 1), 2)
     const indices = planeIndices.gather(inputs[2].argMax(1)); // (B, 2)
     const nextDirections: Direction<tf.Tensor> = rotateBatch(

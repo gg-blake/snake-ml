@@ -1,22 +1,11 @@
 "use client";
-import {
-    ChangeEvent,
-    ChangeEventHandler,
-    MutableRefObject,
-    RefObject,
-    useContext,
-    useEffect,
-    useRef,
-    useState,
-} from "react";
+import { ChangeEvent, useContext, useState } from "react";
 import { Input } from "@/src/components/ui/input";
 import { Slider } from "@/src/components/ui/slider";
-import { LayerArgs } from "@tensorflow/tfjs-layers/dist/engine/topology";
 import {
     Card,
     CardContent,
     CardDescription,
-    CardFooter,
     CardHeader,
     CardTitle,
 } from "@/src/components/ui/card";
@@ -24,9 +13,7 @@ import { Button } from "./ui/button";
 import GameStartContext from "./GameStartContextProvider";
 import { Config } from "../lib/model/utils/types";
 
-type MenuPropertyObject = { [key: string | symbol]: number };
-
-function MenuProperty<T = Settings["model"]>({
+function MenuProperty({
     children,
     onChange,
     defaultValue,
@@ -102,9 +89,8 @@ model: {
 }
 */
 
-export function GameMenu({ config }: { config: Config & LayerArgs }) {
+export function GameMenu({ config }: { config: Config }) {
     const { gameStarted, setGameStarted } = useContext(GameStartContext);
-
 
     return (
         <Card className="absolute top-3 left-3 flex flex-col w-[30vw] h-auto origin-top-left scale-75">

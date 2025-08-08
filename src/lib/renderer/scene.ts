@@ -1,6 +1,6 @@
 import Camera from "./camera";
 import Lighting from "./lighting";
-import Logging from "./logger";
+import Logging from "../logger";
 import { Mesh } from "./mesh";
 
 export default class Scene extends Logging {
@@ -9,12 +9,18 @@ export default class Scene extends Logging {
     light: Lighting | null;
     camera: Camera | null;
     
-    constructor(gl: WebGL2RenderingContext) {
-        super();
+    constructor(gl: WebGL2RenderingContext, debug?: boolean) {
+        super(debug);
         this._gl = gl;
         this.light = null;
         this.camera = null;
         this.meshes = [];
+        
+        // Setup scene
+        // Set clear color to black, fully opaque
+        this._gl.clearColor(0.0, 0.0, 0.0, 1.0);
+        // Clear the color buffer with specified clear color
+        this._gl.clear(this._gl.COLOR_BUFFER_BIT);
     }
     
     add(mesh: Mesh) {

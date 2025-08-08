@@ -1,12 +1,18 @@
 import * as tf from "@tensorflow/tfjs";
 import { LayerArgs } from "@tensorflow/tfjs-layers/dist/engine/topology";
 import "@tensorflow/tfjs-backend-webgl";
-import { Config, HistoryInputs, HistoryOutputs, LayerCallbackConfig } from "./types";
+import {
+    Config,
+    HistoryInputs,
+    HistoryOutputs,
+    LayerCallbackConfig,
+} from "./types";
 
-const history: LayerCallbackConfig<tf.Tensor, HistoryInputs<tf.Tensor>, HistoryOutputs<tf.Tensor>> = (
-    inputs,
-    config,
-): tf.Tensor3D => {
+const history: LayerCallbackConfig<
+    tf.Tensor,
+    HistoryInputs<tf.Tensor>,
+    HistoryOutputs<tf.Tensor>
+> = (inputs, config): tf.Tensor3D => {
     const [B, T, C] = config.batchInputShape! as number[];
     const { startingLength } = config;
     return tf.tidy(() => {

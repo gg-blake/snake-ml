@@ -19,8 +19,9 @@ import {
     Config,
     layerFn,
 } from "./utils/types";
+import Logging from "../logger";
 
-class ModelInput implements ModelIO<tf.Variable> {
+class ModelInput extends Logging implements ModelIO<tf.Variable> {
     position: tf.Variable<tf.Rank.R2>; // Position of snake heads
     direction: tf.Variable<tf.Rank.R3>; // Rotation matrix of all snakes
     fitness: tf.Variable<tf.Rank.R1>; // Current fitness score of all snakes
@@ -29,7 +30,8 @@ class ModelInput implements ModelIO<tf.Variable> {
     history: tf.Variable<tf.Rank.R3>; // Stores all snake parts positions
     active: tf.Variable<tf.Rank.R1>; // Boolean state indicates if snake is alive
 
-    constructor(shape: [number, number, number]) {
+    constructor(shape: [number, number, number], debug?: boolean) {
+        super(debug);
         const [B, T, C] = shape;
         this.position = tf.variable(tf.zeros([B, C]));
         this.direction = tf.variable(
@@ -53,6 +55,17 @@ class ModelInput implements ModelIO<tf.Variable> {
             this[key].assign(state[key]);
         });
     }
+    
+    unmount(verbose?: boolean) {
+        const propertyNames = Object.getOwnPropertyNames(ModelInput.prototype).filter(
+            (name) =>
+                name !== "constructor" &&
+                typeof (this as any)[name] !== "function"
+        );
+        for (const name of propertyNames) {
+            (this as any)[name].dispose();
+        }
+    }
 }
 
 class ModelState extends ModelInput {
@@ -70,6 +83,8 @@ class ModelState extends ModelInput {
         this.assign(logits);
         this.updateCount++;
     }
+    
+    
 }
 
 type History = LayerCallback<
@@ -96,18 +111,20 @@ type Augment = LayerCallback<
     AugmentOutputs<tf.Tensor>
 >;
 
-class Model {
+class Model extends Logging {
     _ffwd: tf.LayersModel;
     _movement: Movement;
     _logic: Logic;
     _augment: Augment;
     _history: History;
-    _config: LayerArgs & Config;
+    _config: Config;
     batchSize: number; // Number of snakes
     timeSize: number; // Max length of snakes (position history)
     channelSize: number; // Number of spatial dimensions
 
-    constructor(config: LayerArgs & Config) {
+    constructor(config: Config, debug?: boolean) {
+        super(debug);
+
         // Initialize properties
         this._config = config;
         this.batchSize = this._config.batchInputShape![0] as number;
@@ -139,48 +156,50 @@ class Model {
     }
 
     call(input: ModelIO<tf.Variable> | ModelIO<tf.Tensor>): ModelIO<tf.Tensor> {
-        const preFFWD = this._augment([
-            input.position,
-            input.direction,
-            input.target,
-            input.history,
-            input.targetIndices,
-        ]);
+        return tf.tidy(() => {
+            const preFFWD = this._augment([
+                input.position,
+                input.direction,
+                input.target,
+                input.history,
+                input.targetIndices,
+            ]);
 
-        const outFFWD = this._ffwd.predictOnBatch(preFFWD) as tf.Tensor2D;
+            const outFFWD = this._ffwd.predictOnBatch(preFFWD) as tf.Tensor2D;
 
-        const [nextPosition, nextDirection] = this._movement([
-            input.position,
-            input.direction,
-            outFFWD,
-            input.active,
-        ]);
+            const [nextPosition, nextDirection] = this._movement([
+                input.position,
+                input.direction,
+                outFFWD,
+                input.active,
+            ]);
 
-        const [nextFitness, nextTargetIndices, isAliveMask] = this._logic([
-            nextPosition,
-            nextDirection,
-            input.target,
-            input.targetIndices,
-            input.fitness,
-            input.active,
-            preFFWD,
-            input.position,
-        ]);
-        const nextHistory = this._history([
-            nextPosition,
-            nextTargetIndices,
-            input.history,
-        ]);
+            const [nextFitness, nextTargetIndices, isAliveMask] = this._logic([
+                nextPosition,
+                nextDirection,
+                input.target,
+                input.targetIndices,
+                input.fitness,
+                input.active,
+                preFFWD,
+                input.position,
+            ]);
+            const nextHistory = this._history([
+                nextPosition,
+                nextTargetIndices,
+                input.history,
+            ]);
 
-        return {
-            position: nextPosition,
-            direction: nextDirection,
-            fitness: nextFitness,
-            target: input.target,
-            targetIndices: nextTargetIndices,
-            history: nextHistory,
-            active: isAliveMask,
-        };
+            return {
+                position: tf.keep(nextPosition),
+                direction: tf.keep(nextDirection),
+                fitness: tf.keep(nextFitness),
+                target: input.target,
+                targetIndices: tf.keep(nextTargetIndices),
+                history: tf.keep(nextHistory),
+                active: tf.keep(isAliveMask),
+            };
+        });
     }
 
     getWeights(trainable?: boolean): tf.Tensor[] {
@@ -189,6 +208,12 @@ class Model {
 
     setWeights(weights: tf.Tensor[]): void {
         this._ffwd.setWeights(weights);
+    }
+
+    unmount(verbose?: boolean) {
+        this._ffwd.dispose();
+        if (!verbose) return;
+        this.log("unmounted");
     }
 }
 

@@ -1,7 +1,13 @@
 import * as tf from "@tensorflow/tfjs";
 import { LayerArgs } from "@tensorflow/tfjs-layers/dist/engine/topology";
 import "@tensorflow/tfjs-backend-webgl";
-import { Fitness, Config, LogicInputs, LogicOutputs, LayerCallbackConfig} from "./gamelayer";
+import {
+    Fitness,
+    Config,
+    LogicInputs,
+    LogicOutputs,
+    LayerCallbackConfig,
+} from "./types";
 import { targetPlanarAngleDecomposition } from "./augment";
 import { dotProduct, generatePlaneIndices } from "../../util";
 
@@ -24,12 +30,13 @@ function fitness(
     };
 }
 
-const logic: LayerCallbackConfig<tf.Tensor, LogicInputs<tf.Tensor>, LogicOutputs<tf.Tensor>> = (
-    inputs,
-    config,
-): LogicOutputs<tf.Tensor> => {
+const logic: LayerCallbackConfig<
+    tf.Tensor,
+    LogicInputs<tf.Tensor>,
+    LogicOutputs<tf.Tensor>
+> = (inputs, config): LogicOutputs<tf.Tensor> => {
     const [B, T, C] = config.batchInputShape! as number[];
-    
+
     const { ttl, boundingBoxLength } = config;
     return tf.tidy(() => {
         //const outOfBounds = sensoryData.slice([0, this.inputLayerSize - 1], [this.B, 1]).squeeze().notEqual(0).cast('int32');
@@ -42,20 +49,22 @@ const logic: LayerCallbackConfig<tf.Tensor, LogicInputs<tf.Tensor>, LogicOutputs
             .logicalNot()
             .cast("int32");
         //outOfBounds.print();
-        const gatheredTargets = inputs[2].gather(inputs[3])
+        const gatheredTargets = inputs[2].gather(inputs[3]);
         const targetAngles = targetPlanarAngleDecomposition(
             config,
             inputs[0],
             inputs[1],
             gatheredTargets,
-            generatePlaneIndices(B),
+            generatePlaneIndices(C),
         )
             .div(Math.PI)
             .abs();
         const targetDirectionAverage = tf
             .sub(0.5, targetAngles.sum(-1).div(C - 1))
             .mul(2) as tf.Tensor1D; // (B,)
-        const positionDifference = gatheredTargets.sub(inputs[0]) as tf.Tensor2D;
+        const positionDifference = gatheredTargets.sub(
+            inputs[0],
+        ) as tf.Tensor2D;
         const distance = dotProduct<tf.Tensor2D>(
             positionDifference,
             positionDifference,
@@ -103,6 +112,5 @@ const logic: LayerCallbackConfig<tf.Tensor, LogicInputs<tf.Tensor>, LogicOutputs
         return [nextFitness, nextTargetIndices, isAliveMask];
     });
 };
-
 
 export { logic };

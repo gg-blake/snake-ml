@@ -2,6 +2,7 @@ import * as tf from "@tensorflow/tfjs";
 import { ModelState, Model } from "./model";
 import { Fitness, Config } from "./utils/types";
 import { LayerArgs } from "@tensorflow/tfjs-layers/dist/engine/topology";
+import Logging from "../logger";
 
 interface TrainingConfig {
     mutationRate: number;
@@ -25,7 +26,7 @@ class TrainerState {
     }
 }
 
-class Trainer {
+class Trainer extends Logging {
     modelState: ModelState;
     trainerState: TrainerState;
     config: TrainingConfig;
@@ -34,7 +35,9 @@ class Trainer {
         modelState: ModelState,
         trainerState: TrainerState,
         trainingConfig: TrainingConfig,
+        debug?: boolean,
     ) {
+        super(debug);
         this.modelState = modelState;
         this.trainerState = trainerState;
         this.config = trainingConfig;
@@ -58,7 +61,7 @@ class Trainer {
     }
 
     step() {
-        if (this.isDead) {
+        if (this.isDead()) {
             console.log("All snakes dead");
             tf.tidy(() => this.updateWeights());
             this.resetState();
@@ -104,8 +107,14 @@ class Trainer {
         this.modelState.model.setWeights(newWeights);
     }
 
-    get isDead(): boolean {
+    isDead(): boolean {
         return this.modelState.active.greater(0).any().arraySync() != 1;
+    }
+    
+    unmount(verbose?: boolean) {
+        this.modelState.model.unmount();
+        if (!verbose) return;
+        this.log("unmounted");
     }
 }
 
@@ -157,12 +166,13 @@ function selectParents<T extends tf.Tensor | tf.Variable>(
     return [weightsA, weightsB];
 }
 
-var modelConfig: LayerArgs & Config = {
-    stepSize: 0.1,
+// vvvv Production implementation below vvvv
+var modelConfig: Config = {
+    stepSize: 1,
     ttl: 200,
-    batchInputShape: [100, 10, 3],
+    batchInputShape: [100, 20, 3],
     startingLength: 5,
-    boundingBoxLength: 30,
+    boundingBoxLength: 40,
     units: 24,
     fitnessGraphParams: {
         a: 10,
@@ -174,18 +184,22 @@ var modelConfig: LayerArgs & Config = {
     dtype: "float32",
 };
 
-// vvvv Production implementation below vvvv
 var trainingConfig: TrainingConfig = {
     mutationFactor: 0.1,
     mutationRate: 0,
     timeToLive: 20,
 };
 
-function getTrainer(): Trainer {
-    const model = new Model(modelConfig);
+function getTrainer(debug?: boolean): Trainer {
+    const model = new Model(modelConfig, debug);
     const modelState = new ModelState(model);
     const trainingState = new TrainerState();
-    const trainer = new Trainer(modelState, trainingState, trainingConfig);
+    const trainer = new Trainer(
+        modelState,
+        trainingState,
+        trainingConfig,
+        debug,
+    );
     return trainer;
 }
 
