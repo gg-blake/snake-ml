@@ -18,6 +18,7 @@ import {
     LogicOutputs,
     Config,
     layerFn,
+    Mountable,
 } from "./utils/types";
 import Logging from "../logger";
 
@@ -111,7 +112,7 @@ type Augment = LayerCallback<
     AugmentOutputs<tf.Tensor>
 >;
 
-class Model extends Logging {
+class Model extends Logging implements Mountable {
     _ffwd: tf.LayersModel;
     _movement: Movement;
     _logic: Logic;

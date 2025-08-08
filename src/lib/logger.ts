@@ -3,10 +3,10 @@ import * as papaparse from "papaparse";
 
 var timingsHistorical: TimingDetails = {};
 
-export async function updateLogFile() {
+export async function updateLogFile(id?: number) {
     const timings = getTimes();
 
-    const data = await readLogs();
+    const data = await readLogs(id);
     if (typeof data !== "string") {
         throw data;
     }
@@ -28,11 +28,9 @@ export async function updateLogFile() {
                     csv = appendCol(csv, key);
                     headers.push(key);
                 }
-
-                console.log(csv[rowIndex])
+                
                 const colIndex = headers.indexOf(key);
                 const val = timings[key].toString();
-                console.log(rowIndex);
                 csv[rowIndex][colIndex] = val;
             }
 
@@ -41,7 +39,7 @@ export async function updateLogFile() {
             });
 
             
-            await writeLogs(out);
+            await writeLogs(out, id);
         },
     });
 }
@@ -104,6 +102,12 @@ export default class Logging {
                     return result;
                 }
             };
+        }
+    }
+    
+    static reset() {
+        for (const key of Object.keys(timingsHistorical)) {
+            timingsHistorical[key] = [];
         }
     }
 

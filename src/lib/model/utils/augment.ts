@@ -258,7 +258,7 @@ const augment: LayerCallbackConfig<
 
     // (B, 2C+2, C)
     return tf.tidy(() => {
-        const planeIndices = generatePlaneIndices(B);
+        const planeIndices = generatePlaneIndices(C);
         const gatheredTargets = inputs[2].gather(inputs[4]);
         // Target input normalization
         const nearbyTarget = targetPlanarAngleDecomposition(

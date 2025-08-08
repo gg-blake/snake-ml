@@ -6,6 +6,7 @@ import { Cube, Mesh, MeshBuffers } from "./mesh";
 import Camera from "./camera";
 import Lighting from "./lighting";
 import Scene from "./scene";
+import { Mountable } from "../model/utils/types";
 
 const contextOptions: WebGLContextAttributes = {
     // https://www.khronos.org/registry/webgl/specs/latest/1.0/#5.2
@@ -24,7 +25,9 @@ interface RendererOptions {
     debug?: true;
 }
 
-class Renderer extends Logging {
+
+
+class Renderer extends Logging implements Mountable {
     _gl: WebGL2RenderingContext;
     options: RendererOptions;
     width: number;
@@ -107,8 +110,11 @@ class Renderer extends Logging {
     unmount(verbose?: boolean) {
         this.scene.unmount(verbose); // Unmount scene
         const canvas = this._gl.canvas as HTMLCanvasElement;
+        /*
+        // Removing the canvas from the DOM manually may interfere with benchmarking
         const parent = canvas.parentNode;
         parent?.removeChild(this._gl.canvas as HTMLCanvasElement); // Unmount canvas
+        */
         if (verbose) this.log("canvas unmounted");
         delete tf.engine().registryFactory['custom-webgl'];
         delete tf.engine().registry['custom-webgl'];

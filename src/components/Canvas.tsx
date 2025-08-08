@@ -6,6 +6,7 @@ import { initContext } from "../lib/util";
 import getTrainer, { Trainer } from "../lib/model/trainer";
 import { useContext } from "react";
 import GameStartContext from "./GameStartContextProvider";
+import benchmark from "../lib/benchmark";
 
 const verbose = true;
 const debug = true;
@@ -14,9 +15,11 @@ let then = 0;
 export function Canvas({
     action,
     fpsElementRef,
+    mode = "benchmark",
 }: {
     action: (renderer: Renderer, trainer: Trainer, now: number) => void;
     fpsElementRef: RefObject<HTMLDivElement>;
+    mode?: "default" | "benchmark";
 }) {
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
     const rendererRef = useRef<Renderer | null>(null);
@@ -32,22 +35,34 @@ export function Canvas({
     };
 
     useEffect(() => {
-        if (!gameStarted) return
+        if (!["default", "benchmark"].includes(mode)) {
+            throw new Error("[Canvas]: invalid mode specified.");
+        }
+        if (!gameStarted) return;
+        if (!canvasRef.current) return;
         // Set initial size
         resizeCanvas();
 
         // Resize on window resize
         window.addEventListener("resize", resizeCanvas);
 
+        
+
         let initRender = false;
         if (!rendererRef.current) {
             initRender = true;
-            initCanvas().then(() => {
+            initCanvas(canvasRef.current).then(() => {
                 trainerRef.current = getTrainer(debug);
             });
         } else {
+            if (mode == "benchmark") {
+                benchmark(
+                    canvasRef.current,
+                );
+                return;
+            }
             requestAnimationFrame(render);
-            console.log("no new renderer created")
+            console.log("no new renderer created");
         }
 
         return () => {
@@ -55,19 +70,17 @@ export function Canvas({
             window.removeEventListener("resize", resizeCanvas);
 
             // Prevent reregistration of tfjs backend on second mount
-            if (initRender || !rendererRef.current || !trainerRef.current) return;
+            if (initRender || !rendererRef.current || !trainerRef.current)
+                return;
             rendererRef.current.unmount(verbose);
             trainerRef.current.unmount(verbose);
             rendererRef.current = null;
             trainerRef.current = null;
-            console.log("renderer and trainer removed")
+            console.log("renderer and trainer removed");
         };
     }, [gameStarted]);
 
-    const initCanvas = async () => {
-        if (!canvasRef.current) return; // Prevent reregistration of tfjs backend on second mount
-
-        const canvas = canvasRef.current;
+    const initCanvas = async (canvas: HTMLCanvasElement) => {
         const renderer = new Renderer(canvas, {
             verbose: verbose,
             debug: debug,
@@ -94,10 +107,9 @@ export function Canvas({
         if (now % 2 > 1.9) {
             fpsElementRef.current.textContent = `FPS: ${fps.toFixed(1)}`; // update fps display
         }
-        
 
         tidy(() => action(renderer, trainer, now));
-        
+
         setTimeout(() => requestAnimationFrame(render), 100);
     };
 

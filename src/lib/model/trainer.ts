@@ -1,6 +1,6 @@
 import * as tf from "@tensorflow/tfjs";
 import { ModelState, Model } from "./model";
-import { Fitness, Config } from "./utils/types";
+import { Fitness, Config, Mountable } from "./utils/types";
 import { LayerArgs } from "@tensorflow/tfjs-layers/dist/engine/topology";
 import Logging from "../logger";
 
@@ -26,7 +26,7 @@ class TrainerState {
     }
 }
 
-class Trainer extends Logging {
+class Trainer extends Logging implements Mountable {
     modelState: ModelState;
     trainerState: TrainerState;
     config: TrainingConfig;
@@ -170,9 +170,9 @@ function selectParents<T extends tf.Tensor | tf.Variable>(
 var modelConfig: Config = {
     stepSize: 1,
     ttl: 200,
-    batchInputShape: [100, 20, 3],
+    batchInputShape: [100, 10, 3],
     startingLength: 5,
-    boundingBoxLength: 40,
+    boundingBoxLength: 30,
     units: 24,
     fitnessGraphParams: {
         a: 10,

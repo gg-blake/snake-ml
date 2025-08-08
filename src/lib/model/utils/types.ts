@@ -146,5 +146,9 @@ interface ModelIO<T> {
     active: TensorOrArray<T, tf.Rank.R1>; // Boolean state indicates if snake is alive
 }
 
+interface Mountable {
+    unmount(verbose?: boolean): void;
+}
+
 export { layerFn };
-export type { ModelIO };
+export type { ModelIO, Mountable };

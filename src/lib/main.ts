@@ -59,6 +59,9 @@ const maskSnakeRGBA = (indices: tf.Tensor1D, maxLength: number): tf.Tensor2D =>
             .cast("float32"); // 0.0 (false) / 1.0 (true)
         if (rgb == undefined) {
             rgb = tf.keep(tf.randomUniform([B, 3]));
+        } else if (rgb.shape[0] != B) {
+            rgb.dispose();
+            rgb = tf.keep(tf.randomUniform([B, 3]));
         }
         const rgbTiled = rgb
             .reshape([B, 1, 3])
@@ -92,13 +95,6 @@ var count = 0;
 const logger = new Logging();
 
 function main(renderer: Renderer, trainer: Trainer, now: number) {
-    if (count == 100) {
-        updateLogFile().then(() => {
-            logger.log(
-                "Benchmarking stats written to ./public/logging-times.csv",
-            );
-        });
-    }
     now *= 0.001;
 
     trainer.step(); // Training step
@@ -115,12 +111,12 @@ function main(renderer: Renderer, trainer: Trainer, now: number) {
 
     const cubePositions = maskSnakeXYZ(scores, T, historyReshaped);
     const cubeColors = maskSnakeRGBA(scores, T);
-    const samplePositions = cubePositions.slice([0, 0], [T * 2, C]);
-    const sampleColors = tf.randomUniform([T * 2, C]).concat(tf.ones([T * 2, 1]), 1);
     const glData = {
         gl: renderer._gl,
         program: renderer.program,
     };
+    
+    
 
     // Load tensor's textures and render the cubes
     const positionData = loadTensorData(cubePositions, glData);
@@ -130,6 +126,8 @@ function main(renderer: Renderer, trainer: Trainer, now: number) {
     // cleanup tensors
     positionData.tensorRef.dispose();
     colorData.tensorRef.dispose();
+    scores.dispose();
+    historyReshaped.dispose();
     count++;
 }
 
