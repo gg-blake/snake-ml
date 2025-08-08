@@ -1,8 +1,0 @@
-{
-    "discord.enabled": true,
-    "editor.formatOnPaste": true,
-    "workbench.colorTheme": "Eva Dark Italic Bold",
-    "workbench.preferredDarkColorTheme": "Monochrome Dark Amplified",
-    "typescript.inlayHints.enumMemberValues.enabled": true,
-    "editor.defaultFormatter": "SimonSiefke.prettier-vscode"
-}
