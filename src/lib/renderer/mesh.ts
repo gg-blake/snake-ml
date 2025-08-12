@@ -1,4 +1,4 @@
-import Logging from "../logger";
+import Logging from "../debug_tools/logger";
 
 interface MeshBuffers {
     position: WebGLBuffer;

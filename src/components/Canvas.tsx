@@ -6,7 +6,7 @@ import { initContext } from "../lib/util";
 import getTrainer, { Trainer } from "../lib/model/trainer";
 import { useContext } from "react";
 import GameStartContext from "./GameStartContextProvider";
-import benchmark from "../lib/benchmark";
+import benchmark from "../lib/debug_tools/benchmark";
 
 const verbose = true;
 const debug = true;
@@ -110,7 +110,7 @@ export function Canvas({
 
         tidy(() => action(renderer, trainer, now));
 
-        setTimeout(() => requestAnimationFrame(render), 100);
+        requestAnimationFrame(render);
     };
 
     return (

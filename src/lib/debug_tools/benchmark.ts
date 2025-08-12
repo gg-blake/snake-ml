@@ -1,10 +1,10 @@
 import Logging, { updateLogFile } from "./logger";
-import main from "./main";
-import { Model, ModelState } from "./model/model";
-import { modelConfig, Trainer, TrainerState, trainingConfig } from "./model/trainer";
-import { Mountable } from "./model/utils/types";
-import { Renderer } from "./renderer/renderer";
-import { initContext } from "./util";
+import main from "../main";
+import { Model, ModelState } from "../model/model";
+import { modelConfig, Trainer, TrainerState, trainingConfig } from "../model/trainer";
+import { Mountable } from "../model/model_utils/types";
+import { Renderer } from "../renderer/renderer";
+import { initContext } from "../util";
 
 interface BenchmarkConfig {
     numberOfSamples: number;

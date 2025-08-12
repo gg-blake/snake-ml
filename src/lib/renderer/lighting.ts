@@ -1,5 +1,5 @@
 import { vec3, mat4 } from "gl-matrix";
-import Logging from "../logger";
+import Logging from "../debug_tools/logger";
 import { MeshBuffers } from "./renderer";
 
 export default class Lighting extends Logging {

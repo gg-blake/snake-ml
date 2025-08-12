@@ -1,10 +1,10 @@
 import { LayerArgs } from "@tensorflow/tfjs-layers/dist/engine/topology";
 import * as tf from "@tensorflow/tfjs";
-import FeedForward from "./utils/sequential";
-import { movement } from "./utils/movement";
-import { logic } from "./utils/logic";
-import { augment } from "./utils/augment";
-import { history } from "./utils/history";
+import FeedForward from "./model_utils/sequential";
+import { movement } from "./model_utils/movement";
+import { logic } from "./model_utils/logic";
+import { augment } from "./model_utils/augment";
+import { history } from "./model_utils/history";
 import {
     ModelIO,
     LayerCallback,
@@ -19,8 +19,8 @@ import {
     Config,
     layerFn,
     Mountable,
-} from "./utils/types";
-import Logging from "../logger";
+} from "./model_utils/types";
+import Logging from "../debug_tools/logger";
 
 class ModelInput extends Logging implements ModelIO<tf.Variable> {
     position: tf.Variable<tf.Rank.R2>; // Position of snake heads

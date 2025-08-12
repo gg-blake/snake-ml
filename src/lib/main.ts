@@ -1,8 +1,8 @@
 import * as tf from "@tensorflow/tfjs";
 import { Trainer } from "./model/trainer";
 import { Renderer } from "./renderer/renderer";
-import Logging, { getTimes, updateLogFile } from "./logger";
-import { loadTensorData } from "./util";
+import Logging, { getTimes, updateLogFile } from "./debug_tools/logger";
+import { loadTensorData, readTextureData } from "./util";
 
 function test(renderer: Renderer, trainer: Trainer, now: number) {
     const glData = {
@@ -86,19 +86,24 @@ const maskSnakeXYZ = (
         const offsetTiled = offset.tile([1, 3]);
         const emptyAlphaChannel = tf.ones([B * maxLength, 1]);
         const offsetPosition = offsetTiled
-            .add(position)
+            .add(position.slice([0, 0], [B * maxLength, 3]))
             .concat(emptyAlphaChannel, 1);
         return offsetPosition as tf.Tensor2D;
     });
 
+
+
 var count = 0;
 const logger = new Logging();
+
 
 function main(renderer: Renderer, trainer: Trainer, now: number) {
     now *= 0.001;
 
     trainer.step(); // Training step
     const snakeStartingLength = trainer.modelState.model._config.startingLength;
+    
+    
     const [B, T, C] = trainer.modelState.model.shape;
     const instanceCount = B * T;
     const scores =
@@ -107,16 +112,19 @@ function main(renderer: Renderer, trainer: Trainer, now: number) {
         instanceCount,
         C,
     ]);
-    
 
-    const cubePositions = maskSnakeXYZ(scores, T, historyReshaped);
-    const cubeColors = maskSnakeRGBA(scores, T);
+    const cubePositions = maskSnakeXYZ(scores, T, historyReshaped).reshape([
+        B,
+        T * 4,
+    ]) as tf.Tensor2D;
+    const cubeColors = maskSnakeRGBA(scores, T).reshape([
+        B,
+        T * 4,
+    ]) as tf.Tensor2D;
     const glData = {
         gl: renderer._gl,
         program: renderer.program,
     };
-    
-    
 
     // Load tensor's textures and render the cubes
     const positionData = loadTensorData(cubePositions, glData);

@@ -182,11 +182,48 @@ function assertSameContext(
     }
 }
 
-function loadTensorData(tensor: tf.Tensor, glData: WebGLData): tf.GPUData {
+export function readTextureData(
+    gl: WebGL2RenderingContext,
+    texture: WebGLTexture,
+    width: number,
+    height: number
+): Float32Array {
+    // Create a framebuffer and attach the texture to it
+    const framebuffer = gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+    gl.framebufferTexture2D(
+        gl.FRAMEBUFFER,
+        gl.COLOR_ATTACHMENT0,
+        gl.TEXTURE_2D,
+        texture,
+        0,
+    );
+
+    // Check framebuffer status
+    const fbStatus = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
+    if (fbStatus !== gl.FRAMEBUFFER_COMPLETE) {
+        console.error("Framebuffer incomplete:", fbStatus);
+        return new Float32Array(0);
+    }
+
+    // Read pixels into a Float32Array
+    const buffer = new Float32Array(width * height * 4); // RGBA
+    gl.readPixels(0, 0, width, height, gl.RGBA, gl.FLOAT, buffer);
+
+    // Cleanup
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.deleteFramebuffer(framebuffer);
+
+    return buffer;
+}
+
+function loadTensorData(tensor: tf.Tensor2D, glData: WebGLData): tf.GPUData {
     const { gl, program } = glData;
 
     // Get the tensor's underlying texture
-    const data = tensor.dataToGPU();
+    const data = tensor.dataToGPU({
+        customTexShape: [tensor.shape[0], Math.floor(tensor.shape[1] / 4)]
+    });
     const texture = data.texture!;
     const canvasWidth = gl.canvas.width;
     const canvasHeight = gl.canvas.height;
@@ -211,6 +248,39 @@ function loadTensorData(tensor: tf.Tensor, glData: WebGLData): tf.GPUData {
     return data;
 }
 
+export const normalize = (tensor: tf.Tensor2D, width: number, height: number): tf.Tensor2D => tf.tidy(() => {
+    const rgba = tensor.reshape([height * width, 4]);
+    const rgb = rgba.slice([0, 0], [height * width, 3]);
+    const rgbNorm = rgb.div(tf.norm(rgb, "euclidean", 1, true).tile([1, 3]));
+    const alphaConcat = rgbNorm
+        .concat(tf.ones([height * width, 1]), -1)
+        .reshape([height, width * 4]);
+    
+    return alphaConcat as tf.Tensor2D;
+});
 
+export function downloadTexture(gl: WebGL2RenderingContext, tensor: tf.Tensor2D, width: number, height: number) {
+    const norm = normalize(tensor, width, height).mul<tf.Tensor2D>(255);
+    let normArrFlat: number[] = [];
+    for (const a of norm.arraySync()) {
+        normArrFlat = [...normArrFlat, ...a];
+    }
+    const arr8ui = new Uint8ClampedArray(normArrFlat);
+    console.log(arr8ui);
+    const offscreenCanvas = document.createElement("canvas");
+    offscreenCanvas.width = width;
+    offscreenCanvas.height = height;
+    const ctx = offscreenCanvas.getContext("2d");
+
+    const imageData = new ImageData(arr8ui, width, height);
+    ctx!.putImageData(imageData, 0, 0);
+    const dataURL = offscreenCanvas.toDataURL("image/png");
+    const link = document.createElement("a");
+    link.href = dataURL;
+    link.download = "texture.png";
+    document.body.appendChild(link); // Append to body for compatibility
+    link.click();
+    document.body.removeChild(link); // Clean up
+}
 
 export { loadTensorData, initContext, assertSameContext };

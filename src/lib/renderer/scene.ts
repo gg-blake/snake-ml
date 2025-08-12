@@ -1,6 +1,6 @@
 import Camera from "./camera";
 import Lighting from "./lighting";
-import Logging from "../logger";
+import Logging from "../debug_tools/logger";
 import { Mesh } from "./mesh";
 
 export default class Scene extends Logging {

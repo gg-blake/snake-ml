@@ -1,81 +1,201 @@
-# Overview
-Snake-ML is web-visualization of applying machine learning to a classic arcade game called snake. The premise is simple: navigate a space to gather food, avoid the walls of the game space, and avoid your growing tail. As the player progresses, navigating this space while avoiding the tail becomes increasingly difficult and requires thinking multiple steps ahead to avoid being trapped.
-### Training an AI to Play
-Training an AI to play a game is more difficult than simple classification of images or data as it falls under a category of *unsupervised learning*. This means that the AI must learn to play the game without any immediate training data and must learn through trial and error. Attempting to train an AI to play this game may seem trivial at first, but problems arise when we want the snake to do things the human player cannot (I will get into that soon).
+# Snake-ML: Machine Learning for N-Dimensional Spatial Reasoning
 
-The AI learns using a very famous unsupervised learning technique called a *genetic learning algorithm*. This technique was proposed in the early 1950s by none other than Alan Turing: the Father of Computing and was popularized in the late 1980s. This algorithm involves the simulating a large amount of parallel models, initially all randomly generated, then the models with the best calculated *fitness score* are then selected to carry on their unique attributes or *genes* to the next batch of simulated models. This directly mimics the evolutionary mechanics of the animal kingdom where survival of the fittest is law.
+[![Live Demo](https://img.shields.io/badge/Demo-Live-green)](https://snakeml.moody.mx/)
+[![Paper](https://img.shields.io/badge/Paper-Available-blue)](#citation)
+[![License](https://img.shields.io/badge/License-MIT-yellow)](#license)
 
-# Setup
-#### Unfortunately, at this moment there is no way to run the model natively through a web client so to run the simulation, dependencies are required for your computer.
+**Snake-ML** is a web-based simulation tool designed as an efficient and intuitive test bed for developing spatial navigation strategies in n-dimensional environments. Built entirely for the web using WebGL and TensorFlow.js, it enables privacy-preserving machine learning training directly on edge devices.
 
-1) Fork the repo on the `web` branch and clone it to your local machine (download git [here](https://git-scm.com/downloads))
-2) Install the latest Miniconda version for your computer [here](https://docs.anaconda.com/miniconda/install/)
-3) Install node and npm [here](https://nodejs.org/en/download/package-manager)
-4) In your terminal, navigate to the cloned repo directory and issue the following command to create the prebuilt conda environment
-```
+## 🌟 Features
+
+- **N-Dimensional Snake Game**: Generalized classic snake game to any number of dimensions (N ≥ 2)
+- **Edge Computing**: Train models directly in your browser with no cloud dependency
+- **Genetic Algorithm**: Computationally efficient training without expensive backpropagation
+- **Real-time Visualization**: WebGL-powered 3D visualization of the training process
+- **Advanced Computer Vision**: Custom algorithms for boundary detection and collision avoidance
+- **Unified WebGL Context (UWC)**: GPU pipeline achieving up to 32× speedup in training time
+- **Data Augmentation**: Equivariant preprocessing for improved model efficiency
+
+## 🚀 Quick Start
+
+### Online Demo
+Visit [https://snakeml.moody.mx/](https://snakeml.moody.mx/) to try Snake-ML immediately in your browser.
+
+### Local Development
+
+```bash
+# Clone the repository
+git clone https://github.com/gg-blake/snake-ml.git
 cd snake-ml
-conda env create -f environment.yml
-```
-5) Once the environment is created, activate the environment with this command
-```
-conda activate snake-ml-env
-```
-6) Install the npm dependencies for the web server with the following commands
-```
-cd client
-npm install --force
-```
-7) At this point, before opening the website, you will need two command prompts open to run the web server and the python server. I recommend using [tmux](https://github.com/tmux/tmux/wiki) so you don't have do this but its not required. Start the python server with the following commands:
-```
-cd server
-uvicorn server:app --host 0.0.0.0 --port 8000 --reload
-```
-8) Lastly, you will start the web server with the following command
-```
-cd client
+
+# Install dependencies
+npm install
+
+# Start development server
 npm run dev
+
+# Build for production
+npm run build
 ```
-9) Initially, the web server is open locally on port 3000, you can access it at http://localhost:3000
 
-# Usage
-The snake simluation can be adjusted viausally and behaviorally in a side panel in the top-left of the screen. You can adjust the number of dimensions, game size, number of snakes and some other features like learning rate and a noise parameter.
+## 🧠 How It Works
 
-![tweakpane-1.png](https://github.com/gg-blake/snake-ml/blob/master/tweakpane-1.png?raw=True)
+### Architecture Overview
 
-In dimensions lower than 4, you can customize the color visualization. At the moment there are two vidualizations, `alive` (set by default) which highlights all snakes that are currently alive and `best` which highlights the curently best performing snake. I plan to add some more visualizations in the future so stayed tuned! Visualization mode can be access in the `Visual` tab
+Snake-ML uses a genetic learning algorithm to train neural networks that control n-dimensional snakes. Each snake is represented by a simple feedforward neural network with two layers:
 
-![tweakpane-2.png](https://github.com/gg-blake/snake-ml/blob/master/tweakpane-2.png?raw=True)
+| Layer | Input Shape | Output Shape | Activation | Parameters |
+|-------|-------------|--------------|------------|------------|
+| FC1   | (B, 3N-1)   | (B, 24)      | Tanh       | 48B(2N-1)  |
+| FC2   | (B, 24)     | (B, N-1)     | Tanh       | -          |
 
-## Higher dimensional snake
-The program currently has the ability to simulate an infinite number of dimensions for the snake to navigate, however only the lowest 4 dimensions can be visible on the screen. If you want to go beyond the fourth dimensions (just for fun) then you can adjust the presets manually in the `client/app/stream.tsx` file. The fourth dimension of the simulation is projected to the HSL color-space where lower `w` positions in the space correspond with a snake with a red hue and higher `w` positions correspond with a purple and blue hue.
+Where:
+- `B` = Batch size (number of snakes)
+- `N` = Number of spatial dimensions
 
-I recommend observing the fact that the snakes in the fourth and higher dimensions seem to break the rules of the game when they moves forward and backwards and loop on each other. However, they are moving in a dimension that is inaccessible to humans. This gives insight into how 3-dimensional snakes appear in 2-dimensional cross sections. 
-### 2-dimensions
+### Training Process
 
-![game-2d.gif](https://github.com/gg-blake/snake-ml/blob/master/game-2d.gif?raw=True)
+1. **Initialize Population**: Spawn B snakes with random neural network weights
+2. **Parallel Simulation**: All snakes play simultaneously until failure
+3. **Fitness Evaluation**: Rate snakes based on their performance using:
+   ```
+   score = ||p_prev - p_food|| - ||p_current - p_food||
+   ```
+4. **Selection & Reproduction**: Best-performing snakes breed to create the next generation
+5. **Mutation**: Apply random mutations to encourage exploration
 
-### 4-dimensions
+### Data Augmentation
 
-![game-4d.gif](https://github.com/gg-blake/snake-ml/blob/master/game-4d.gif?raw=True)
+Each snake receives augmented environmental data:
 
-# Technologies
-The backend relied on [PyTorch](https://pytorch.org/) for running and training the models. PyTorch is an open-source machine learning library for Python that is tuned for high-performance tensor operations for machine learning.
+- **Wall Distance**: Custom raycasting algorithm calculates distance to boundaries
+- **Food Direction**: Decomposed angles between snake direction and food position
+- **Body Collision**: Proximity detection for self-collision avoidance
 
-Additionally, the backend relied on [SSE](https://en.wikipedia.org/wiki/Server-sent_events), an alternative to [HTTP websockets](https://en.wikipedia.org/wiki/WebSocket) to send low-latency data stream to the web client. Low latency was crucial in this project as I wanted the user to see snake updates at a reasonable frame rate. However this came at a cost since SSE is similar to the [UDP layer 4 protocol](https://en.wikipedia.org/wiki/User_Datagram_Protocol) as it does not require the client to receive the data that is sent. However, since I am running this client server communication locally the frame loss can safely be ignored.
+## 🔧 Configuration
 
-For the frontend, I am using a popular web framework called [Next.JS](https://nextjs.org/) which allows for real-time state changes in the [DOM](https://developer.mozilla.org/en-US/docs/Web/API/Document_Object_Model) to be partially re-rendered. This technology wasn't entirely necessary for my needs, however I am comfortable working with this framework for web development. I used this to reduce friction in the development process.
-# Challenges Faced
-### CORS
-When attempting to communicate information using SSE from the server to client, the NextJS API was providing difficulty with establishing valid CORS headers. The most tricky part about this was the lack of information given as an error response from the server when the CORS headers were invalid.
+### Basic Parameters
 
-![cors.png](https://github.com/gg-blake/snake-ml/blob/master/cors.png?raw=True)
+```typescript
+const modelConfig: Config = {
+    stepSize: 1,
+    ttl: 200, // Number of steps snake is permitted without acquiring food
+    batchInputShape: [
+        100, // Number of snakes per generation
+        10, // Capped length of snakes
+        3 // Number of spatial dimensions (N ≥ 2)
+    ],
+    startingLength: 5,
+    boundingBoxLength: 30, // Half-length of bounding box
+    units: 24,
+    fitnessGraphParams: {
+        a: 10,
+        b: 1.5,
+        c: 4,
+        min: -1,
+        max: 1,
+    },
+    dtype: "float32",
+};
+const trainingConfig: TrainingConfig = {
+    mutationFactor: 0.1, // Maximum mutation magnitude
+    mutationRate: 0, // Probability of parameter mutation
+};
+```
 
-### High-Dimensional Rotation
-We learned in our CS 460 course that rotations can be applied to an object by applying what is called a rotation matrix to an object's vector. We learned about rotation in 2 and 3-dimensions but for the purposes of my project, I wanted to have a rotation matrix for every possible sized vector (3, 4, 5, 6... dimensions). According to [this paper](https://naos-be.zcu.cz/server/api/core/bitstreams/c155d250-c732-4256-a9cf-33cd61f0015f/content), a n-dimensional rotation can be represented as a series of 2-dimensional rotations along different 2-d subspaces of a higher dimensional space. Implementing this algorithm for my needs was extremely time-consuming. I needed to utilize this rotation algorithm so that each logit in the output nodes of the neural network when normalized, corresponds to a degree of rotation in radians.
+### Advanced Settings
 
-# Acknowledgements
-This project was in part developed with generative text models such as [GitHub Copilot](https://github.com/features/copilot) and [ChatGPT](https://chatgpt.com/)
+- **Genetic Algorithm**: Customize selection pressure, crossover methods
+- **Rendering**: Toggle visualization, adjust frame rates, camera controls
+- **Performance**: Enable/disable Unified WebGL Context for maximum performance
 
-For web development references I used the [ThreeJS API Docs](https://threejs.org/docs/) , [Mozilla Web Docs](https://developer.mozilla.org/en-US/), [Stack Overflow](https://stackoverflow.com/), and [PyTorch API Docs](https://pytorch.org/docs/stable/index.html)
+## 📊 Performance
 
-Special thanks to Professor Daniel Haehn for his excellent CS 460 course. This project has been a long time in the making and his course has reinvigorated my passion for this project. I will continue to improve on the project and add more features.
+### Benchmarks (AMD Ryzen 9 5900HS + RTX 3070)
+
+| Configuration | Cloud Training | Edge Training | Edge + UWC | Speedup |
+|---------------|----------------|---------------|------------|---------|
+| 300 snakes    | 430ms         | 107ms         | 75ms       | 5.72×   |
+| 1000 snakes   | 1447ms        | 335ms         | 83ms       | 17.53×  |
+| 1900 snakes   | 2766ms        | 617ms         | 87ms       | 31.97×  |
+
+**Key Findings:**
+- Average 4.03× speedup over cloud computing
+- Up to 31.97× speedup with Unified WebGL Context
+- Performance scales with population size
+
+## 🔬 Research Applications
+
+Snake-ML is designed for research in:
+
+- **Spatial Cognition**: Understanding how agents navigate complex environments
+- **Edge AI**: Privacy-preserving machine learning on client devices
+- **Computer Vision**: Real-time visual processing for navigation
+- **Robotics**: Spatial reasoning for autonomous systems
+
+## 🛠️ Technical Details
+
+### Dependencies
+
+- **TensorFlow.js**: GPU-accelerated machine learning in the browser
+- **Three.js**: WebGL-based 3D visualization
+- **WebGL**: Hardware-accelerated graphics rendering
+- **Web Workers**: Parallel processing for training and rendering
+
+### Browser Requirements
+
+- Modern browser with WebGL 1.0+ support
+- GPU recommended for optimal performance
+- JavaScript enabled
+
+### System Architecture
+
+```
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│   Web Browser   │    │  TensorFlow.js  │    │     Three.js    │
+│                 │    │   (Training)    │    │ (Visualization) │
+├─────────────────┤    ├─────────────────┤    ├─────────────────┤
+│     WebGL       │◄──►│  Genetic Algo   │◄──►│  3D Rendering   │
+│   (Unified)     │    │   Population    │    │   Real-time     │
+└─────────────────┘    └─────────────────┘    └─────────────────┘
+```
+
+### Long Term  
+- [ ] Peer-to-peer federated learning via Bluetooth
+- [ ] Integration with robotics simulators
+- [ ] Real-world deployment tools for autonomous systems
+
+## 📄 Citation
+
+If you use Snake-ML in your research, please cite our paper:
+
+```bibtex
+@article{moody2025snakeml,
+  title={Machine Learning for N-Dimensional Spatial Reasoning Tasks on the Web},
+  author={Moody, Blake and Kim, JieHyun and Kim, Sanghyuk and Haehn, Daniel},
+  journal={Frontiers in Computer Science},
+  year={2025},
+  publisher={University of Massachusetts Boston}
+}
+```
+
+## 📞 Contact
+
+- **Blake Moody** - [blake.moody001@umb.edu](mailto:blake.moody001@umb.edu)
+- **Research Lab** - Machine Psychology, University of Massachusetts Boston
+- **Demo** - [https://snakeml.moody.mx/](https://snakeml.moody.mx/)
+
+## 📋 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## 🙏 Acknowledgments
+
+- University of Massachusetts Boston Department of Computer Science
+- WebGL and TensorFlow.js communities
+- OpenAI Gym for inspiration
+- Contributors and researchers using Snake-ML
+
+---
+
+**Keywords**: machine learning, genetic algorithm, edge computing, spatial reasoning, artificial intelligence, computer vision, n-dimensional navigation, WebGL, TensorFlow.js

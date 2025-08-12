@@ -1,12 +1,12 @@
 import * as tf from "@tensorflow/tfjs";
 import { mat4, vec3 } from "gl-matrix";
 import { vertexShaderSource, fragmentShaderSource } from "./shaders";
-import Logging from "../logger";
+import Logging from "../debug_tools/logger";
 import { Cube, Mesh, MeshBuffers } from "./mesh";
 import Camera from "./camera";
 import Lighting from "./lighting";
 import Scene from "./scene";
-import { Mountable } from "../model/utils/types";
+import { Mountable } from "../model/model_utils/types";
 
 const contextOptions: WebGLContextAttributes = {
     // https://www.khronos.org/registry/webgl/specs/latest/1.0/#5.2

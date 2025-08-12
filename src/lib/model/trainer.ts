@@ -1,8 +1,8 @@
 import * as tf from "@tensorflow/tfjs";
 import { ModelState, Model } from "./model";
-import { Fitness, Config, Mountable } from "./utils/types";
+import { Fitness, Config, Mountable } from "./model_utils/types";
 import { LayerArgs } from "@tensorflow/tfjs-layers/dist/engine/topology";
-import Logging from "../logger";
+import Logging from "../debug_tools/logger";
 
 interface TrainingConfig {
     mutationRate: number;

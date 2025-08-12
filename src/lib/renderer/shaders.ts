@@ -15,13 +15,18 @@ uniform highp vec3 uDirectionalPosition;
 out lowp vec4 vColor;
 out highp vec3 vLighting;
 flat out int id;
+out highp vec2 coords;
 
 void main(void) {
     id = gl_InstanceID;
 
-    float texHeight = float(textureSize(uPositionTexture, 0).y); // expect 2
-    float u = (float(id) + 0.5) / texHeight;
-    vec4 offset = texture(uPositionTexture, vec2(0.5, u));
+    ivec2 texShape = textureSize(uPositionTexture, 0);
+    float texHeight = float(texShape.y);
+    float texWidth = float(texShape.x);
+    float v = (floor(float(id) / texWidth) + 0.5) / texHeight;
+    float u = (mod(float(id), texWidth) + 0.5) / texWidth;
+    coords = vec2(u, v);
+    vec4 offset = texture(uPositionTexture, coords);
 
     // Transform + offset
     vec4 worldPos = uModelViewMatrix * aVertexPosition;
@@ -50,11 +55,12 @@ in highp vec3 vLighting;
 flat in int id;
 out lowp vec4 fragColor;
 uniform sampler2D uColorTexture;
+in highp vec2 coords;
 
 void main(void) {
     float texHeight = float(textureSize(uColorTexture, 0).y); // expect 2
     float u = (float(id) + 0.5) / texHeight;
-    vec4 sampledColor = texture(uColorTexture, vec2(0.5, u));
+    vec4 sampledColor = texture(uColorTexture, coords);
 
     fragColor = vec4(vLighting, 1.0) * sampledColor;
 }

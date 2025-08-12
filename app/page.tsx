@@ -14,7 +14,7 @@ export default function Home() {
 
     return (
         <div className="w-screen h-screen flex flex-row-reverse">
-            { gameStarted && <Canvas action={main} fpsElementRef={fpsElementRef} /> }
+            { gameStarted && <Canvas action={main} fpsElementRef={fpsElementRef} mode="default" /> }
             <GameMenu config={modelConfig} />
             <Badge className="absolute top-3 right-3 flex" variant="secondary"><div ref={fpsElementRef}></div></Badge>
         </div>

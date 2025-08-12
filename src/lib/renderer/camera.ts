@@ -1,4 +1,4 @@
-import Logging from "../logger";
+import Logging from "../debug_tools/logger";
 import { mat4 } from "gl-matrix";
 
 export default class Camera extends Logging {
