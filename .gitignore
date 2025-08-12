@@ -40,4 +40,8 @@ next-env.d.ts
 # debug-logs
 public/**/*.csv
 
+# prettier
+.prettierrc
 
+# eslint
+.eslintrc.json
