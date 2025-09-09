@@ -28,50 +28,7 @@ const customBackend = new tf.MathBackendWebGL(canvas);
 tf.registerBackend(customBackendName, () => customBackend);
 await tf.setBackend(customBackendName); // Wait until changes have been made
    ```
-   2. In Tensorflow.js, tensors are stored as WebGL textures as an array of pixels. Each pixel on the texture has 4 32-bit float values representing the Red (R), Green (G), Blue (B), Alpha (A) channels. Orders can vary, but every four values of a tensor are mapped to a single RGBA32F pixel. To properly load a tensor's texture in the shared WebGL context, first we load the tensor's texture as normal.
-```TypeScript
-const tensor = tf.randomUniform([30, 20]); // 2d tensor with arbitrary size
-const tensorHeight = tensor.shape[0];
-const tensorWidth = Math.floor(tensor.shape[1] / 4);
-
-// Get the tensor's underlying texture
-const data = tensor.dataToGPU({
-	customTexShape: [tensorHeight, tensorWidth] // manually specify the texture dimensions since Tensorflow.js sometimes is wrong
-});
-const texture = data.texture!;
-const canvasWidth = canvas.width;
-const canvasHeight = canvas.height;
-
-const gl = canvas.getContext('webgl'); // WebGL context object
-```
-3. Tensorflow.js when initializing a tensor has a side effects to buffers, before we draw, we must revert the frame buffer, canvas, and vertex array buffer. Otherwise, meshes that were previously loaded to these buffers will be overwritten.
-```TypeScript
-// Clean the frame buffer
-gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-
-// Reset viewport size (because Tensorflow.js will modify this)
-gl.viewport(0, 0, canvasWidth, canvasHeight);
-gl.scissor(0, 0, canvasWidth, canvasHeight);
-
-// Some tensor artifacts are previously loaded into vertex buffer
-gl.bindVertexArray(null);
-
-// Clear the texture
-gl.bindTexture(gl.TEXTURE_2D, null);
-
-// Bind our tensor's texture to the first texture buffer
-gl.bindTexture(gl.TEXTURE_2D, texture);
-
-// Ensure texture has the right settings for sampling in vertex shader
-gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST); // prevents  sample interpolation on vertex shader
-gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST); // prevents sample interpolation on vertex shader
-gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-
-// Safely unbind the tensor's texture
-gl.bindTexture(gl.TEXTURE_2D, null);
-```
-4. Initialize our WebGL shader program with a custom vertex and fragment shader
+2. Initialize our WebGL shader program with a custom vertex and fragment shader
 ```TypeScript
 // Compile vertex shader from glsl source code
 const vertexShader = gl.createShader(gl.VERTEX_SHADER)!;
@@ -141,6 +98,49 @@ void main(void) {
 	// In this exmaple, we don't modify the fragment shader based on textures (but you can load another tensor texture to be handled by the fragment shader)
     fragColor = vColor;
 }
+```
+3. In Tensorflow.js, tensors are stored as WebGL textures as an array of pixels. Each pixel on the texture has 4 32-bit float values representing the Red (R), Green (G), Blue (B), Alpha (A) channels. Orders can vary, but every four values of a tensor are mapped to a single RGBA32F pixel. To properly load a tensor's texture in the shared WebGL context, first we load the tensor's texture as normal.
+```TypeScript
+const tensor = tf.randomUniform([30, 20]); // 2d tensor with arbitrary size
+const tensorHeight = tensor.shape[0];
+const tensorWidth = Math.floor(tensor.shape[1] / 4);
+
+// Get the tensor's underlying texture
+const data = tensor.dataToGPU({
+	customTexShape: [tensorHeight, tensorWidth] // manually specify the texture dimensions since Tensorflow.js sometimes is wrong
+});
+const texture = data.texture!;
+const canvasWidth = canvas.width;
+const canvasHeight = canvas.height;
+
+const gl = canvas.getContext('webgl'); // WebGL context object
+```
+4. Tensorflow.js when initializing a tensor has a side effects to buffers, before we draw, we must revert the frame buffer, canvas, and vertex array buffer. Otherwise, meshes that were previously loaded to these buffers will be overwritten.
+```TypeScript
+// Clean the frame buffer
+gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+
+// Reset viewport size (because Tensorflow.js will modify this)
+gl.viewport(0, 0, canvasWidth, canvasHeight);
+gl.scissor(0, 0, canvasWidth, canvasHeight);
+
+// Some tensor artifacts are previously loaded into vertex buffer
+gl.bindVertexArray(null);
+
+// Clear the texture
+gl.bindTexture(gl.TEXTURE_2D, null);
+
+// Bind our tensor's texture to the first texture buffer
+gl.bindTexture(gl.TEXTURE_2D, texture);
+
+// Ensure texture has the right settings for sampling in vertex shader
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST); // prevents  sample interpolation on vertex shader
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST); // prevents sample interpolation on vertex shader
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+// Safely unbind the tensor's texture
+gl.bindTexture(gl.TEXTURE_2D, null);
 ```
 5. Prepare our cube example mesh to be drawn
 ```TypeScript
@@ -243,4 +243,4 @@ gl.drawElementsInstanced(
 	instanceCount,
 );
 ```
-*For rendering subsequent changes to the tensor values, you can repeat steps 5 through 8.*
+*For rendering subsequent changes to the tensor values, you can repeat steps 3 through 8.*
