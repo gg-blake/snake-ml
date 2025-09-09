@@ -169,15 +169,7 @@ Snake-ML is designed for research in:
 
 If you use Snake-ML in your research, please cite our paper:
 
-```bibtex
-@article{moody2025snakeml,
-  title={Machine Learning for N-Dimensional Spatial Reasoning Tasks on the Web},
-  author={Moody, Blake and Kim, JieHyun and Kim, Sanghyuk and Haehn, Daniel},
-  journal={Frontiers in Computer Science},
-  year={2025},
-  publisher={University of Massachusetts Boston}
-}
-```
+**CITATION PENDING**
 
 ## 📞 Contact
 
