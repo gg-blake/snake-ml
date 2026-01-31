@@ -18,6 +18,30 @@ const projectBatchUOntoV = (
     return mul1 as tf.Tensor4D
 });
 
+const localTargetDistances = (position: tf.Tensor2D, direction: tf.Tensor3D, targetPosition: tf.Tensor2D) =>
+    tf.tidy(() => {
+        const tGlobal = tf.sub(targetPosition, position);
+        const tLocal = tGlobal
+            .expandDims(1) // one target per snake batch [Batch, 1, Dim]
+            .matMul(direction) // project to local "observer space" [Batch, 1, Dim]
+            .squeeze([1]) // [Batch, Dim]
+
+        return tLocal;
+    })
+
+const localBodyDistances = (position:tf.Tensor2D, direction: tf.Tensor3D, history: tf.Tensor) =>
+    tf.tidy(() => {
+        const hGlobal = tf.sub(history, position.expandDims(1)); // [Batch, Len, Dim]
+        const hLocal = hGlobal
+            .matMul(direction, false, true) // project to local "observer space" [Batch, Len, Dim]
+
+        const hLocalMin = hLocal
+            .where(hLocal.notEqual(0), hLocal.mul(tf.fill(hLocal.shape, 1e8)))
+            .min(1); // atm, we don't need all projections of snake history, so we can just discard all but the closest components to the local axis [Batch, Dim]
+        
+        return hLocalMin;
+    })
+
 const calculateNearbyBody = (
     config: GL.Config, 
     position: GL.Position<tf.Tensor>, 
@@ -182,22 +206,23 @@ export default class InputNorm extends GameLayer {
                 nearbyTarget.where(nearbyTarget.greaterEqual(0), tf.ones(nearbyTarget.shape)),
                 nearbyTarget.where(nearbyTarget.lessEqual(0), tf.ones(nearbyTarget.shape)),
             ], 1)
+            //const nearbyTarget = localTargetDistances(inputs[0], inputs[1], inputs[2]).sigmoid(); // (B, C)
             // Body input normalization
-            const nearbyBody = calculateNearbyBody(this.config, inputs[0], inputs[1], inputs[3], this.planeIndices, 0.95, 1000).slice([0, 0], [B, 1]).squeeze([1]) as tf.Tensor1D; // (B,)
+            //const nearbyBody = localBodyDistances(inputs[0], inputs[1], inputs[3]).sigmoid(); // (B, C)
             // Bounds input normalization
             const nearbyBounds = calculateNearbyBounds(this.config, inputs[0], inputs[1]); // (B,)
 
             // Concatenate all sensory data to a single input vector
             return tf.concat([
-                nearbyTargetDiscrete, 
+                nearbyTarget,
                 nearbyBounds.expandDims(-1)
-            ], 1).expandDims(-1) as tf.Tensor3D; // (B, 3)
+            ], 1).expandDims(-1) as tf.Tensor3D; // (B, 2 * (C - 1) + 1)
         })
     }
 
     computeOutputShape(inputShape: tf.Shape[]): tf.Shape {
         const [ B, T, C ] = this.config.batchInputShape! as number[];
-        return [B, 2 * (C - 1) + 1, 1];
+        return [B, (C - 1) + 1, 1];
     }
     
     static get className() {

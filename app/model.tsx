@@ -171,22 +171,36 @@ const TensorFlowModel: React.FC = () => {
         const canvas = document.createElement('canvas');
         const gl = canvas.getContext('webgl2') as WebGL2RenderingContext;
         const scene = new THREE.Scene();
-        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const camera = new THREE.OrthographicCamera(
+            -window.innerWidth / 2,
+            window.innerWidth / 2,
+            window.innerHeight / 2,
+            -window.innerHeight / 2,
+            0.1,
+            1000
+        );
         const r = new THREE.WebGLRenderer({
             canvas,
             context: gl,
         });
+        
         r.setSize(window.innerWidth, window.innerHeight);
         containerRef.current?.appendChild(r.domElement);
-        camera.position.z = 5;
+        camera.position.z = 100;
+        camera.position.x = 50;
+        camera.zoom = 20;
 
         renderer.current = new NEATRenderer(scene, r, camera);
 
         const ambientLight = new THREE.AmbientLight(0x404040); // soft white light
         const mainLight = new THREE.DirectionalLight('white', 1);
         mainLight.position.set(10, 10, 10);
+        const secondLight = new THREE.DirectionalLight('white', 1);
+        secondLight.position.set(-10, -10, 10);
         renderer.current.scene.add(ambientLight);
         renderer.current.scene.add(mainLight);
+        renderer.current.scene.add(secondLight);
+        renderer.current.renderer.setPixelRatio(10.0);
     }
 
     const train = () => {
@@ -298,6 +312,18 @@ const TensorFlowModel: React.FC = () => {
             }
         })
     }
+
+    useEffect(() => {
+        addEventListener('keypress', (e: KeyboardEvent) => {
+            if (e.key == 'a') {
+                //renderer.current?.camera.position.x = 
+            }
+        })
+
+        return () => {
+            removeEventListener('keypress', () => console.log('listener removed'));
+        }
+    }, [])
 
     useEffect(() => {
         if (checkpoint.json == null || checkpoint.bin == null) return;

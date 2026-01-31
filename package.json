@@ -21,6 +21,7 @@
     "lucide-react": "^0.476.0",
     "next": "^15.1.1",
     "next-themes": "^0.4.6",
+    "r3f": "^1.0.0",
     "react": "^18",
     "react-dom": "^18",
     "react-drag-drop-files": "^3.0.1",
@@ -36,6 +37,7 @@
   },
   "devDependencies": {
     "@tweakpane/core": "^2.0.5",
+    "@types/react": "19.2.7",
     "eslint": "^9.21.0",
     "prettier": "3.5.3",
     "typescript": "^5.8.2"

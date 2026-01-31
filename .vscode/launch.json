@@ -33,5 +33,22 @@
                 }
             ]
         },
+        {
+            "type": "chrome",
+            "request": "launch",
+            "name": "Launch Chrome against localhost",
+            "url": "http://localhost:3000/",
+            "webRoot": "${workspaceFolder}",
+            "sourceMaps": true,
+            
+        },
+        {
+            "name": "Attach",
+            "type": "chrome",
+            "request": "attach",
+            "port": 9222,
+            "url": "http://localhost:3000/",
+            "webRoot": "${workspaceFolder}"
+        }
     ],
 }

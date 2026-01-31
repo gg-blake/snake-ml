@@ -70,7 +70,7 @@ export default class Logic extends GameLayer {
             const distanceDeltaWeight = distanceDelta.sub(distanceDeltaAverage).div(distanceDelta.max().sub(distanceDelta.min())).mul(2).sub(1) as tf.Tensor1D;
             
             const fitnessDelta = this.fitness(distanceDelta).mul(inputs[5]) as tf.Tensor1D;
-            fitnessDelta.print();
+            
             
             const touchingFood = distanceFinal.lessEqual(1).cast("float32");
             const nextFitness = inputs[4].add(fitnessDelta).add(touchingFood.mul(ttl*2).pow(inputs[3].add(1))) as tf.Tensor1D;

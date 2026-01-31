@@ -18,6 +18,12 @@ const projectDirectionToBounds = (config: GL.Config, position: tf.Tensor2D, dire
     return proj
 })
 
+
+var colorMap: {[key: number]: [number, number, number]} = {}
+for (let i = 0; i < 50; i++) {
+    colorMap[i] = [Math.random(), Math.random(), Math.random()];
+}
+
 export class Renderer {
     scene: THREE.Scene;
     renderer: THREE.WebGLRenderer;
@@ -288,6 +294,7 @@ export class NEATRenderer extends Renderer {
         this.controls = new OrbitControls(this.camera, this.renderer.domElement);
         this.controls.update();
         this.controls.target.set(0, 0, 0);
+        this.render();
     }
 
     renderInit(model: NEAT) {
@@ -315,15 +322,23 @@ export class NEATRenderer extends Renderer {
         
 
         if (C > 3) {
-            const position = params.position;
-            Object.values(this.uuids).map((uuid: string[], index: number) => {
-                const mesh = this.scene.getObjectByProperty('uuid', uuid[0]) as THREE.Mesh;
-                (mesh.material as THREE.MeshStandardMaterial).color.lerpHSL(new THREE.Color((position[index][3] + boundingBoxLength) / (boundingBoxLength * 2), 1, 1), 0.5);
+            const position = params.history;
+            Object.values(this.uuids).map((uuid: string[], i: number) => {
+                uuid.map((id: string, j: number) => {
+                    const mesh = this.scene.getObjectByProperty('uuid', id) as THREE.Mesh;
+                    mesh.material = (mesh.material as THREE.MeshStandardMaterial).clone();
+                    const hsl = new THREE.Color();
+                    const speed = 0.1;
+    
+                    hsl.setHSL(Math.sin(position[i][j][3] * speed), 1, 0.5);
+    
+                    (mesh.material as THREE.MeshStandardMaterial).color.lerp(hsl, 0.5);
+                })
             })
         } else {
             Object.values(this.uuids).map((uuid: string[], index: number) => {
                 const mesh = this.scene.getObjectByProperty('uuid', uuid[0]) as THREE.Mesh;
-                (mesh.material as THREE.MeshStandardMaterial).color.lerp(Renderer.primaryMaterial.color, 0.5);
+                (mesh.material as THREE.MeshStandardMaterial).color.set(...colorMap[index % Object.keys(colorMap).length]);
             })
         }
 

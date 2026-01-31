@@ -42,11 +42,11 @@ var settings: Settings = {
         renderEpochInterval: 1
     },
     model: {
-        ttl: 20,
-        batchInputShape: [100, 10, 3],
-        startingLength: 5,
-        boundingBoxLength: 30,
-        units: 24,
+        ttl: 350,
+        batchInputShape: [50, 20, 3],
+        startingLength: 12,
+        boundingBoxLength: 100,
+        units: 128,
         fitnessGraphParams: {
             a: 10,
             b: 1.5,
@@ -57,8 +57,8 @@ var settings: Settings = {
         dtype: 'float32'
     },
     trainer: {
-        mutationFactor: 0.1,
-        mutationRate: 0
+        mutationFactor: 0.05,
+        mutationRate: 0.2
     }
 }
 
@@ -87,7 +87,7 @@ export var stats: Stats = {
 }
 
 
-settings.trainer.mutationRate = 1 / settings.model.batchInputShape![0]!;
+//settings.trainer.mutationRate = 1 / settings.model.batchInputShape![0]!;
 pendingSettings.trainer.mutationRate = settings.trainer.mutationRate
 export {settings, pendingSettings};
 
